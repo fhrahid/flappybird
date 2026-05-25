@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSql } from '@/lib/db'
+import { query } from '@/lib/db'
 import { connections } from '@/lib/chat-store'
 
 export async function POST(request: NextRequest) {
@@ -20,9 +20,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const sql = getSql()
-
-    const player = await sql`SELECT id, name FROM players WHERE id = ${playerId}`
+    const player = await query(
+      'SELECT id, name FROM players WHERE id = ?',
+      [playerId]
+    )
 
     if (player.length === 0) {
       return NextResponse.json(
@@ -35,10 +36,10 @@ export async function POST(request: NextRequest) {
     const id = crypto.randomUUID()
     const timestamp = new Date().toISOString()
 
-    await sql`
-      INSERT INTO messages (id, content, player_id, created_at)
-      VALUES (${id}, ${message.substring(0, 100)}, ${playerId}, ${timestamp})
-    `
+    await query(
+      'INSERT INTO messages (id, content, player_id, created_at) VALUES (?, ?, ?, ?)',
+      [id, message.substring(0, 100), playerId, timestamp]
+    )
 
     const responseData = {
       id,

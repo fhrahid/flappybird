@@ -87,24 +87,43 @@ export default function Home() {
     }
   }, [fetchLeaderboard])
 
+  const [nameError, setNameError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   // Handle name submission
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (playerName.length < 2) return
+    const trimmedName = playerName.trim()
+    if (trimmedName.length < 2) {
+      setNameError('Name must be at least 2 characters')
+      return
+    }
+    if (trimmedName.length > 15) {
+      setNameError('Name must be 15 characters or less')
+      return
+    }
+
+    setIsSubmitting(true)
+    setNameError('')
 
     try {
       const res = await fetch('/api/player', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: playerName })
+        body: JSON.stringify({ name: trimmedName })
       })
+      const data = await res.json()
       if (res.ok) {
-        const data = await res.json()
         setPlayer(data)
         setGameState('READY')
+      } else {
+        setNameError(data.error || 'Failed to submit name')
       }
     } catch (error) {
       console.error('Failed to create player:', error)
+      setNameError('Network error. Please try again.')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -636,22 +655,28 @@ export default function Home() {
               <input
                 type="text"
                 value={playerName}
-                onChange={(e) => setPlayerName(e.target.value.slice(0, 15))}
+                onChange={(e) => {
+                  setPlayerName(e.target.value)
+                  setNameError('')
+                }}
                 placeholder="Your name..."
                 maxLength={15}
                 autoFocus
-                className="w-full bg-dark/50 text-white text-center font-pixel text-sm px-4 py-3 rounded border border-gray-700 focus:border-neon transition-colors mb-4"
+                className="w-full bg-dark/50 text-white text-center font-pixel text-sm px-4 py-3 rounded border border-gray-700 focus:border-neon transition-colors mb-2"
               />
+              {nameError && (
+                <p className="text-red-400 text-xs font-pixel text-center mb-4">{nameError}</p>
+              )}
               <button
                 type="submit"
-                disabled={playerName.length < 2}
+                disabled={isSubmitting || playerName.trim().length < 2}
                 className="w-full bg-neon text-dark py-3 rounded font-pixel text-sm hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                START PLAYING
+                {isSubmitting ? 'PLEASE WAIT...' : 'START PLAYING'}
               </button>
             </form>
             <p className="text-gray-400 text-xs font-pixel text-center mt-4">
-              2-15 characters, letters and numbers only
+              2-15 characters
             </p>
           </div>
         </div>

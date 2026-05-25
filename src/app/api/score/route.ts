@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSql } from '@/lib/db'
+import { query } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,9 +12,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const sql = getSql()
-
-    const existing = await sql`SELECT id, high_score FROM players WHERE id = ${playerId}`
+    const existing = await query(
+      'SELECT id, high_score FROM players WHERE id = ?',
+      [playerId]
+    )
 
     if (existing.length === 0) {
       return NextResponse.json(
@@ -23,22 +24,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Record the score
-    await sql`
-      INSERT INTO scores (id, points, player_id, created_at)
-      VALUES (${crypto.randomUUID()}, ${score}, ${playerId}, NOW())
-    `
+    const currentHighScore = Number(existing[0].high_score) || 0
 
-    let newHighScore = existing[0].high_score
+    // Record the score
+    await query(
+      'INSERT INTO scores (id, points, player_id, created_at) VALUES (?, ?, ?, datetime("now"))',
+      [crypto.randomUUID(), score, playerId]
+    )
+
+    let newHighScore = currentHighScore
     let rank = 0
 
-    if (score > existing[0].high_score) {
-      await sql`UPDATE players SET high_score = ${score} WHERE id = ${playerId}`
+    if (score > currentHighScore) {
+      await query(
+        'UPDATE players SET high_score = ? WHERE id = ?',
+        [score, playerId]
+      )
       newHighScore = score
     }
 
     // Calculate rank
-    const higherScores = await sql`SELECT COUNT(*) as count FROM players WHERE high_score > ${newHighScore}`
+    const higherScores = await query(
+      'SELECT COUNT(*) as count FROM players WHERE high_score > ?',
+      [newHighScore]
+    )
     rank = Number(higherScores[0].count) + 1
 
     return NextResponse.json({
