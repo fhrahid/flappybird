@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { getSql } from '@/lib/db'
 import { connections } from '@/lib/chat-store'
 
 export async function POST(request: NextRequest) {
@@ -20,34 +20,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const player = await prisma.player.findUnique({
-      where: { id: playerId }
-    })
+    const sql = getSql()
 
-    if (!player) {
+    const player = await sql`SELECT id, name FROM players WHERE id = ${playerId}`
+
+    if (player.length === 0) {
       return NextResponse.json(
         { error: 'Player not found' },
         { status: 404 }
       )
     }
 
-    const chatMessage = await prisma.message.create({
-      data: {
-        content: message.substring(0, 100),
-        playerId: playerId
-      },
-      include: {
-        player: {
-          select: { name: true }
-        }
-      }
-    })
+    const playerName = player[0].name
+    const id = crypto.randomUUID()
+    const timestamp = new Date().toISOString()
+
+    await sql`
+      INSERT INTO messages (id, content, player_id, created_at)
+      VALUES (${id}, ${message.substring(0, 100)}, ${playerId}, ${timestamp})
+    `
 
     const responseData = {
-      id: chatMessage.id,
-      playerName: chatMessage.player.name,
-      message: chatMessage.content,
-      timestamp: chatMessage.createdAt.toISOString()
+      id,
+      playerName,
+      message: message.substring(0, 100),
+      timestamp
     }
 
     // Broadcast to all connected clients

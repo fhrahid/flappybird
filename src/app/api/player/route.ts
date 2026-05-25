@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { getSql } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,20 +21,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    let player = await prisma.player.findUnique({
-      where: { name: sanitizedName }
-    })
+    const sql = getSql()
 
-    if (!player) {
-      player = await prisma.player.create({
-        data: { name: sanitizedName }
+    // Try to find existing player
+    const existing = await sql`SELECT id, name, high_score FROM players WHERE name = ${sanitizedName}`
+
+    if (existing.length > 0) {
+      return NextResponse.json({
+        id: existing[0].id,
+        name: existing[0].name,
+        highScore: existing[0].high_score
       })
     }
 
+    // Create new player
+    const id = crypto.randomUUID()
+    const result = await sql`
+      INSERT INTO players (id, name, high_score, created_at)
+      VALUES (${id}, ${sanitizedName}, 0, NOW())
+      RETURNING id, name, high_score
+    `
+
     return NextResponse.json({
-      id: player.id,
-      name: player.name,
-      highScore: player.highScore
+      id: result[0].id,
+      name: result[0].name,
+      highScore: result[0].high_score
     })
   } catch (error) {
     console.error('Error creating/finding player:', error)

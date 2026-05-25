@@ -1,20 +1,18 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { getSql } from '@/lib/db'
 
 export async function GET() {
   try {
-    const players = await prisma.player.findMany({
-      orderBy: {
-        highScore: 'desc'
-      },
-      take: 10,
-      select: {
-        name: true,
-        highScore: true
-      }
-    })
+    const sql = getSql()
 
-    const leaderboard = players.map((player, index) => ({
+    const players = await sql`
+      SELECT name, high_score as highScore
+      FROM players
+      ORDER BY high_score DESC
+      LIMIT 10
+    `
+
+    const leaderboard = players.map((player: any, index: number) => ({
       rank: index + 1,
       name: player.name,
       highScore: player.highScore

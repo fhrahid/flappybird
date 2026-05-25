@@ -10,9 +10,8 @@ out/
 .env.local
 .env.*.local
 
-# Prisma
-prisma/dev.db
-prisma/dev.db-journal
+# Prisma (local SQLite - not used in production)
+prisma/
 
 # IDE
 .idea/

@@ -6,7 +6,9 @@ export interface ChatMessage {
   timestamp: string
 }
 
-// Active SSE connections
+// Active SSE connections (stored in memory per Lambda/container)
+// Note: In serverless, each invocation may have different memory
+// For production, consider using Redis or a pub/sub service
 export const connections = new Map<string, ReadableStreamDefaultController>()
 
 // Broadcast message to all connected clients

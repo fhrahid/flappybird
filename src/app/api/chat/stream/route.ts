@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`))
         } catch {
           clearInterval(heartbeat)
+          connections.delete(connectionId)
         }
       }, 30000)
     },

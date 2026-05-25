@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { getSql } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,41 +12,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const player = await prisma.player.findUnique({
-      where: { id: playerId }
-    })
+    const sql = getSql()
 
-    if (!player) {
+    const existing = await sql`SELECT id, high_score FROM players WHERE id = ${playerId}`
+
+    if (existing.length === 0) {
       return NextResponse.json(
         { error: 'Player not found' },
         { status: 404 }
       )
     }
 
-    await prisma.score.create({
-      data: {
-        points: score,
-        playerId: playerId
-      }
-    })
+    // Record the score
+    await sql`
+      INSERT INTO scores (id, points, player_id, created_at)
+      VALUES (${crypto.randomUUID()}, ${score}, ${playerId}, NOW())
+    `
 
-    let newHighScore = player.highScore
+    let newHighScore = existing[0].high_score
     let rank = 0
 
-    if (score > player.highScore) {
-      await prisma.player.update({
-        where: { id: playerId },
-        data: { highScore: score }
-      })
+    if (score > existing[0].high_score) {
+      await sql`UPDATE players SET high_score = ${score} WHERE id = ${playerId}`
       newHighScore = score
     }
 
-    const higherScores = await prisma.player.count({
-      where: {
-        highScore: { gt: newHighScore }
-      }
-    })
-    rank = higherScores + 1
+    // Calculate rank
+    const higherScores = await sql`SELECT COUNT(*) as count FROM players WHERE high_score > ${newHighScore}`
+    rank = Number(higherScores[0].count) + 1
 
     return NextResponse.json({
       rank,
