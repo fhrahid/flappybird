@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Player {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  highScore Int       @default(0)
+  createdAt DateTime  @default(now())
+  scores    Score[]
+  messages  Message[]
+}
+
+model Score {
+  id        String   @id @default(uuid())
+  points    Int
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  createdAt DateTime @default(now())
+}
