@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { getDb } from '@/lib/db'
+import { ObjectId } from 'mongodb'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,38 +14,38 @@ export async function POST(request: NextRequest) {
     }
 
     const sanitizedName = name.trim().replace(/[^a-zA-Z0-9 ]/g, '')
+    if (sanitizedName.length < 2) {
+      return NextResponse.json({ error: 'Invalid name' }, { status: 400 })
+    }
 
-    // Try to find existing player
-    const existing = await query(
-      'SELECT id, name, high_score FROM players WHERE name = ?',
-      [sanitizedName]
-    )
+    const db = await getDb()
+    const players = db.collection('players')
 
-    if (existing.length > 0) {
+    // Find existing player
+    const existing = await players.findOne({ name: sanitizedName })
+
+    if (existing) {
       return NextResponse.json({
-        id: existing[0].id,
-        name: existing[0].name,
-        highScore: existing[0].high_score
+        id: existing._id.toString(),
+        name: existing.name,
+        highScore: existing.highScore || 0
       })
     }
 
     // Create new player
-    const id = crypto.randomUUID()
-    await query(
-      'INSERT INTO players (id, name, high_score, created_at) VALUES (?, ?, 0, datetime("now"))',
-      [id, sanitizedName]
-    )
+    const result = await players.insertOne({
+      name: sanitizedName,
+      highScore: 0,
+      createdAt: new Date()
+    })
 
     return NextResponse.json({
-      id,
+      id: result.insertedId.toString(),
       name: sanitizedName,
       highScore: 0
     })
   } catch (error) {
     console.error('Error creating/finding player:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

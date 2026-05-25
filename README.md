@@ -12,7 +12,7 @@ A multiplayer Flappy Bird game with global rankings and live chat.
 ## Tech Stack
 
 - **Frontend:** Next.js 14 (App Router)
-- **Database:** Turso (SQLite at the edge)
+- **Database:** MongoDB
 - **Real-time:** Server-Sent Events (SSE)
 - **Styling:** Tailwind CSS
 
@@ -25,68 +25,17 @@ git clone https://github.com/fhrahid/flappybird.git
 cd flappybird
 ```
 
-### 2. Create Turso Database
+### 2. Configure Environment Variables
 
-1. Install Turso CLI: `curl -sSfL https://get.tur.so/install.sh | bash`
-2. Sign up at [turso.tech](https://turso.tech)
-3. Create database:
-   ```bash
-   turso db create flappy-bird
-   turso db show flappy-bird
-   ```
-4. Get connection URL:
-   ```bash
-   turso db show flappy-bird --url
-   ```
-
-### 3. Configure Environment Variables
-
-Create a `.env` file with:
+Create a `.env` file with your MongoDB connection string:
 
 ```env
-DATABASE_URL=libsql://your-database-name-your-org.turso.io?authToken=your-token-here
+DATABASE_URL=mongodb+srv://username:password@cluster.mongodb.net/?appName=Cluster0
 ```
 
 Or set it in Vercel dashboard → Settings → Environment Variables.
 
-### 4. Run Database Migrations
-
-```bash
-turso db shell flappy-bird
-```
-
-Then run:
-
-```sql
-CREATE TABLE IF NOT EXISTS players (
-  id TEXT PRIMARY KEY,
-  name TEXT UNIQUE NOT NULL,
-  high_score INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS scores (
-  id TEXT PRIMARY KEY,
-  points INTEGER NOT NULL,
-  player_id TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (player_id) REFERENCES players(id)
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-  id TEXT PRIMARY KEY,
-  content TEXT NOT NULL,
-  player_id TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (player_id) REFERENCES players(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_players_high_score ON players(high_score DESC);
-CREATE INDEX IF NOT EXISTS idx_scores_player_id ON scores(player_id);
-CREATE INDEX IF NOT EXISTS idx_messages_player_id ON messages(player_id);
-```
-
-### 5. Install and Run
+### 3. Install and Run
 
 ```bash
 npm install
@@ -100,10 +49,8 @@ Open [http://localhost:3000](http://localhost:3000)
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/fhrahid/flappybird)
 
 1. Fork or import this repository
-2. Create a Turso database and get the URL
-3. Add `DATABASE_URL` environment variable in Vercel
-4. Run the SQL migrations in Turso shell
-5. Deploy!
+2. Add `DATABASE_URL` environment variable in Vercel with your MongoDB URI
+3. Deploy!
 
 ## Controls
 

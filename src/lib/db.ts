@@ -1,22 +1,24 @@
-import { createClient } from '@libsql/client'
+import { MongoClient, Db } from 'mongodb'
 
-let _client: ReturnType<typeof createClient> | null = null
+let client: MongoClient | null = null
+let db: Db | null = null
 
-export function getDb() {
-  if (!_client) {
+export async function getDb(): Promise<Db> {
+  if (!db) {
     if (!process.env.DATABASE_URL) {
       throw new Error('DATABASE_URL environment variable is not set')
     }
-    _client = createClient({
-      url: process.env.DATABASE_URL
-    })
+    client = new MongoClient(process.env.DATABASE_URL)
+    await client.connect()
+    db = client.db('flappybird')
   }
-  return _client
+  return db
 }
 
-// Helper to run queries
-export async function query(sql: string, params: any[] = []) {
-  const db = getDb()
-  const result = await db.execute({ sql, args: params })
-  return result.rows
+export async function closeDb() {
+  if (client) {
+    await client.close()
+    client = null
+    db = null
+  }
 }

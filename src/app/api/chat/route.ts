@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { getDb } from '@/lib/db'
+import { ObjectId } from 'mongodb'
 import { connections } from '@/lib/chat-store'
 
 export async function POST(request: NextRequest) {
@@ -7,43 +8,36 @@ export async function POST(request: NextRequest) {
     const { playerId, message } = await request.json()
 
     if (!playerId || !message) {
-      return NextResponse.json(
-        { error: 'Missing playerId or message' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Missing playerId or message' }, { status: 400 })
     }
 
     if (message.length > 100) {
-      return NextResponse.json(
-        { error: 'Message too long (max 100 characters)' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Message too long (max 100 characters)' }, { status: 400 })
     }
 
-    const player = await query(
-      'SELECT id, name FROM players WHERE id = ?',
-      [playerId]
-    )
+    const db = await getDb()
+    const players = db.collection('players')
 
-    if (player.length === 0) {
-      return NextResponse.json(
-        { error: 'Player not found' },
-        { status: 404 }
-      )
+    const player = await players.findOne({ _id: new ObjectId(playerId) })
+
+    if (!player) {
+      return NextResponse.json({ error: 'Player not found' }, { status: 404 })
     }
 
-    const playerName = player[0].name
-    const id = crypto.randomUUID()
+    const id = new ObjectId()
     const timestamp = new Date().toISOString()
 
-    await query(
-      'INSERT INTO messages (id, content, player_id, created_at) VALUES (?, ?, ?, ?)',
-      [id, message.substring(0, 100), playerId, timestamp]
-    )
+    await db.collection('messages').insertOne({
+      _id: id,
+      content: message.substring(0, 100),
+      playerId: new ObjectId(playerId),
+      playerName: player.name,
+      createdAt: timestamp
+    })
 
     const responseData = {
-      id,
-      playerName,
+      id: id.toString(),
+      playerName: player.name,
       message: message.substring(0, 100),
       timestamp
     }
@@ -63,9 +57,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error sending message:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

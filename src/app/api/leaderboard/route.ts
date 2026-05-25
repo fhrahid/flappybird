@@ -1,25 +1,26 @@
 import { NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { getDb } from '@/lib/db'
 
 export async function GET() {
   try {
-    const players = await query(
-      'SELECT name, high_score as highScore FROM players ORDER BY high_score DESC LIMIT 10',
-      []
-    )
+    const db = await getDb()
+    const players = db.collection('players')
 
-    const leaderboard = players.map((player: any, index: number) => ({
+    const leaderboard = await players
+      .find({})
+      .sort({ highScore: -1 })
+      .limit(10)
+      .toArray()
+
+    const result = leaderboard.map((player, index) => ({
       rank: index + 1,
       name: player.name,
-      highScore: player.highScore
+      highScore: player.highScore || 0
     }))
 
-    return NextResponse.json(leaderboard)
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching leaderboard:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -1,64 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { getDb } from '@/lib/db'
+import { ObjectId } from 'mongodb'
 
 export async function POST(request: NextRequest) {
   try {
     const { playerId, score } = await request.json()
 
     if (!playerId || typeof score !== 'number' || score < 0) {
-      return NextResponse.json(
-        { error: 'Invalid request' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
-    const existing = await query(
-      'SELECT id, high_score FROM players WHERE id = ?',
-      [playerId]
-    )
+    const db = await getDb()
+    const players = db.collection('players')
+    const scores = db.collection('scores')
 
-    if (existing.length === 0) {
-      return NextResponse.json(
-        { error: 'Player not found' },
-        { status: 404 }
-      )
+    const player = await players.findOne({ _id: new ObjectId(playerId) })
+
+    if (!player) {
+      return NextResponse.json({ error: 'Player not found' }, { status: 404 })
     }
-
-    const currentHighScore = Number(existing[0].high_score) || 0
 
     // Record the score
-    await query(
-      'INSERT INTO scores (id, points, player_id, created_at) VALUES (?, ?, ?, datetime("now"))',
-      [crypto.randomUUID(), score, playerId]
-    )
+    await scores.insertOne({
+      points: score,
+      playerId: new ObjectId(playerId),
+      createdAt: new Date()
+    })
 
-    let newHighScore = currentHighScore
+    let newHighScore = player.highScore || 0
     let rank = 0
 
-    if (score > currentHighScore) {
-      await query(
-        'UPDATE players SET high_score = ? WHERE id = ?',
-        [score, playerId]
+    if (score > newHighScore) {
+      await players.updateOne(
+        { _id: new ObjectId(playerId) },
+        { $set: { highScore: score } }
       )
       newHighScore = score
     }
 
     // Calculate rank
-    const higherScores = await query(
-      'SELECT COUNT(*) as count FROM players WHERE high_score > ?',
-      [newHighScore]
-    )
-    rank = Number(higherScores[0].count) + 1
+    const higherScores = await players.countDocuments({ highScore: { $gt: newHighScore } })
+    rank = higherScores + 1
 
-    return NextResponse.json({
-      rank,
-      highScore: newHighScore
-    })
+    return NextResponse.json({ rank, highScore: newHighScore })
   } catch (error) {
     console.error('Error submitting score:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
