@@ -1,22 +1,26 @@
 import { MongoClient, Db } from 'mongodb'
 
-const MONGODB_URI = process.env.DATABASE_URL!
+const MONGODB_URI = process.env.DATABASE_URL
 const DB_NAME = 'flappybird'
 
 let cachedClient: MongoClient | null = null
 let cachedDb: Db | null = null
 
 export async function getDb(): Promise<Db> {
-  // If we have a cached connection and it's still connected, use it
+  if (!MONGODB_URI) {
+    throw new Error('DATABASE_URL environment variable is not set')
+  }
+
+  // If we have a cached connection, use it
   if (cachedClient && cachedDb) {
     return cachedDb
   }
 
-  // Create new connection with timeout
+  // Create new connection with timeouts
   const client = new MongoClient(MONGODB_URI, {
     serverSelectionTimeoutMS: 5000,
     connectTimeoutMS: 10000,
-    socketTimeoutMS: 45000,
+    socketTimeoutMS: 30000,
   })
 
   try {
@@ -26,18 +30,8 @@ export async function getDb(): Promise<Db> {
     return cachedDb
   } catch (error) {
     console.error('MongoDB connection error:', error)
+    cachedClient = null
+    cachedDb = null
     throw error
   }
-}
-
-// For serverless, we want to reuse connections
-export function getClient(): MongoClient {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-    })
-  }
-  return cachedClient
 }
