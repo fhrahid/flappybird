@@ -754,7 +754,10 @@ export default function Home() {
 
             {/* READY overlay */}
             {gameState === 'READY' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4 pointer-events-auto">
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4 pointer-events-auto"
+                onClick={handleJump}
+              >
                 <p className="text-white text-xs sm:text-sm font-pixel mb-2 sm:mb-4 animate-pulse text-center">
                   TAP TO START
                 </p>
