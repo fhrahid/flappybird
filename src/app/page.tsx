@@ -106,23 +106,34 @@ export default function Home() {
     setIsSubmitting(true)
     setNameError('')
 
+    // Client-side timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
+
     try {
       const res = await fetch('/api/player', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmedName })
+        body: JSON.stringify({ name: trimmedName }),
+        signal: controller.signal
       })
+      clearTimeout(timeoutId)
       const data = await res.json()
       if (res.ok) {
         setPlayer(data)
         setGameState('READY')
       } else {
         setNameError(data.error || 'Failed to submit name')
+        setIsSubmitting(false)
       }
-    } catch (error) {
+    } catch (error: any) {
+      clearTimeout(timeoutId)
       console.error('Failed to create player:', error)
-      setNameError('Network error. Please try again.')
-    } finally {
+      if (error.name === 'AbortError') {
+        setNameError('Server timeout. Please check your connection.')
+      } else {
+        setNameError('Network error. Please try again.')
+      }
       setIsSubmitting(false)
     }
   }
