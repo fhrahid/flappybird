@@ -11,16 +11,19 @@ export async function getDb(): Promise<Db> {
     throw new Error('DATABASE_URL environment variable is not set')
   }
 
-  // If we have a cached connection, use it
   if (cachedClient && cachedDb) {
     return cachedDb
   }
 
-  // Create new connection with timeouts
   const client = new MongoClient(MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000,
-    connectTimeoutMS: 10000,
+    serverSelectionTimeoutMS: 10000,
+    connectTimeoutMS: 30000,
     socketTimeoutMS: 30000,
+    ssl: true,
+    tls: true,
+    tlsAllowInvalidCertificates: false,
+    retryWrites: true,
+    w: 'majority',
   })
 
   try {
