@@ -656,7 +656,6 @@ export default function Home() {
     } else if (gameState === 'READY') {
       startGame()
     }
-    // Don't do anything on GAME_OVER - only the button should restart
   }, [gameState])
 
   useEffect(() => {
@@ -738,67 +737,72 @@ export default function Home() {
         {/* Game area */}
         <div className={`flex-1 flex flex-col items-center ${isFullscreen ? 'w-full h-full' : ''}`}>
           <div className="relative" ref={gameContainerRef}>
-            {/* Clickable wrapper - only during PLAYING and READY */}
+            {/* Clickable wrapper for game area */}
             <div
-              onClick={gameState !== 'GAME_OVER' ? handleJump : undefined}
-              onTouchStart={gameState !== 'GAME_OVER' ? (e) => { e.preventDefault(); handleJump() } : undefined}
-              className={`cursor-pointer select-none ${gameState === 'GAME_OVER' ? 'pointer-events-none' : ''}`}
+              onClick={handleJump}
+              onTouchStart={(e) => { e.preventDefault(); handleJump() }}
+              className="cursor-pointer select-none"
             >
               <canvas
                 ref={canvasRef}
                 width={canvasSize.width}
                 height={canvasSize.height}
                 className={`rounded-lg border-4 border-dark shadow-2xl ${isFullscreen ? 'w-full h-full rounded-none border-0' : 'max-w-[400px]'}`}
-                style={{ touchAction: 'none' }}
+                style={{ touchAction: 'none', display: 'block' }}
               />
+            </div>
 
-              {gameState === 'READY' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4">
-                  <p className="text-white text-xs sm:text-sm font-pixel mb-2 sm:mb-4 animate-pulse text-center">
-                    TAP TO START
-                  </p>
-                  <div className="text-neon text-xs font-pixel">READY!</div>
-                </div>
-              )}
+            {/* READY overlay */}
+            {gameState === 'READY' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4 pointer-events-auto">
+                <p className="text-white text-xs sm:text-sm font-pixel mb-2 sm:mb-4 animate-pulse text-center">
+                  TAP TO START
+                </p>
+                <div className="text-neon text-xs font-pixel">READY!</div>
+              </div>
+            )}
 
-              {gameState === 'GAME_OVER' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4 z-20">
-                  <h2 className="text-red-500 text-lg sm:text-xl font-pixel mb-2 sm:mb-4">GAME OVER</h2>
-                  <p className="text-white text-sm font-pixel mb-2">Score: {finalScore}</p>
-                  {currentRank && (
-                    <p className="text-neon text-xs font-pixel mb-2 sm:mb-4">Rank: #{currentRank}</p>
-                  )}
-                  <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); startGame() }}
-                    className="bg-neon text-dark px-4 sm:px-6 py-2 sm:py-3 rounded font-pixel text-xs sm:text-sm hover:bg-green-400 transition-colors z-30 relative"
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    PLAY AGAIN
-                  </button>
-                  <p className="text-gray-400 text-xs font-pixel mt-2 sm:mt-4">or press SPACE</p>
-                  {isFullscreen && (
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); exitFullscreen() }}
-                      className="mt-4 bg-black/70 text-white px-4 py-2 rounded font-pixel text-xs hover:bg-black/90 z-30 relative"
-                      style={{ touchAction: 'manipulation' }}
-                    >
-                      ⛶ EXIT FULLSCREEN
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Exit fullscreen button on canvas in mobile */}
-              {isFullscreen && gameState === 'PLAYING' && (
+            {/* GAME OVER overlay - completely separate, outside clickable area */}
+            {gameState === 'GAME_OVER' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4 pointer-events-auto"
+                style={{ zIndex: 100 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="text-red-500 text-lg sm:text-xl font-pixel mb-2 sm:mb-4">GAME OVER</h2>
+                <p className="text-white text-sm font-pixel mb-2">Score: {finalScore}</p>
+                {currentRank && (
+                  <p className="text-neon text-xs font-pixel mb-2 sm:mb-4">Rank: #{currentRank}</p>
+                )}
                 <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); exitFullscreen() }}
-                  className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-6 py-3 rounded-full font-pixel text-sm hover:bg-black/90 z-50"
+                  onClick={(e) => { e.stopPropagation(); startGame() }}
+                  className="bg-neon text-dark px-6 py-3 rounded font-pixel text-sm hover:bg-green-400 transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >
-                  ⛶ EXIT FULLSCREEN
+                  PLAY AGAIN
                 </button>
-              )}
-            </div>
+                <p className="text-gray-400 text-xs font-pixel mt-4">Press SPACE</p>
+                {isFullscreen && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); exitFullscreen() }}
+                    className="mt-4 bg-black/70 text-white px-4 py-2 rounded font-pixel text-xs"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    EXIT FULLSCREEN
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Exit fullscreen button during PLAYING */}
+            {isFullscreen && gameState === 'PLAYING' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); exitFullscreen() }}
+                className="absolute top-4 right-4 bg-black/70 text-white px-4 py-2 rounded font-pixel text-xs"
+                style={{ touchAction: 'manipulation', zIndex: 50 }}
+              >
+                ✕ EXIT
+              </button>
+            )}
           </div>
 
           {/* Score below canvas on mobile */}
