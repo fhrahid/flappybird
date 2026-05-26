@@ -54,21 +54,15 @@ class SoundManager {
       const ctx = this.getContext()
       const oscillator = ctx.createOscillator()
       const gainNode = ctx.createGain()
-
       oscillator.connect(gainNode)
       gainNode.connect(ctx.destination)
-
       oscillator.frequency.setValueAtTime(400, ctx.currentTime)
       oscillator.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1)
-
       gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
-
       oscillator.start(ctx.currentTime)
       oscillator.stop(ctx.currentTime + 0.1)
-    } catch (e) {
-      console.log('Audio not supported')
-    }
+    } catch (e) {}
   }
 
   playClick() {
@@ -76,47 +70,34 @@ class SoundManager {
       const ctx = this.getContext()
       const oscillator = ctx.createOscillator()
       const gainNode = ctx.createGain()
-
       oscillator.connect(gainNode)
       gainNode.connect(ctx.destination)
-
       oscillator.type = 'square'
       oscillator.frequency.setValueAtTime(800, ctx.currentTime)
-
       gainNode.gain.setValueAtTime(0.15, ctx.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05)
-
       oscillator.start(ctx.currentTime)
       oscillator.stop(ctx.currentTime + 0.05)
-    } catch (e) {
-      console.log('Audio not supported')
-    }
+    } catch (e) {}
   }
 
   playGameOver() {
     try {
       const ctx = this.getContext()
       const frequencies = [300, 250, 200]
-
       frequencies.forEach((freq, i) => {
         const oscillator = ctx.createOscillator()
         const gainNode = ctx.createGain()
-
         oscillator.connect(gainNode)
         gainNode.connect(ctx.destination)
-
         oscillator.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15)
         oscillator.type = 'sawtooth'
-
         gainNode.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15)
         gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.15)
-
         oscillator.start(ctx.currentTime + i * 0.15)
         oscillator.stop(ctx.currentTime + i * 0.15 + 0.15)
       })
-    } catch (e) {
-      console.log('Audio not supported')
-    }
+    } catch (e) {}
   }
 
   playScore() {
@@ -124,21 +105,15 @@ class SoundManager {
       const ctx = this.getContext()
       const oscillator = ctx.createOscillator()
       const gainNode = ctx.createGain()
-
       oscillator.connect(gainNode)
       gainNode.connect(ctx.destination)
-
       oscillator.frequency.setValueAtTime(880, ctx.currentTime)
       oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.05)
-
       gainNode.gain.setValueAtTime(0.2, ctx.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
-
       oscillator.start(ctx.currentTime)
       oscillator.stop(ctx.currentTime + 0.1)
-    } catch (e) {
-      console.log('Audio not supported')
-    }
+    } catch (e) {}
   }
 }
 
@@ -154,10 +129,10 @@ export default function Home() {
   const [canSendMessage, setCanSendMessage] = useState(true)
   const [currentRank, setCurrentRank] = useState<number | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
-  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 600 })
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const gameContainerRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const gameLoopRef = useRef<number | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -171,27 +146,45 @@ export default function Home() {
   const gameOverTriggeredRef = useRef(false)
   const lastScoreRef = useRef(0)
 
-  // Responsive canvas sizing
-  useEffect(() => {
-    const updateSize = () => {
-      const maxWidth = Math.min(window.innerWidth - 32, 400)
-      const maxHeight = Math.min(window.innerHeight - 300, 600)
-
-      // Maintain 2:3 aspect ratio
-      let width = maxWidth
-      let height = width * 1.5
-
-      if (height > maxHeight) {
-        height = maxHeight
-        width = height / 1.5
-      }
-
-      setCanvasSize({ width: Math.floor(width), height: Math.floor(height) })
+  // Fullscreen helpers
+  const enterFullscreen = () => {
+    const elem = document.documentElement
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen()
+    } else if ((elem as any).webkitRequestFullscreen) {
+      (elem as any).webkitRequestFullscreen()
     }
+    setIsFullscreen(true)
+  }
 
-    updateSize()
-    window.addEventListener('resize', updateSize)
-    return () => window.removeEventListener('resize', updateSize)
+  const exitFullscreen = () => {
+    if (document.exitFullscreen) {
+      document.exitFullscreen()
+    } else if ((document as any).webkitExitFullscreen) {
+      (document as any).webkitExitFullscreen()
+    }
+    setIsFullscreen(false)
+  }
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      exitFullscreen()
+    } else {
+      enterFullscreen()
+    }
+  }
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
   }, [])
 
   // Load player and messages
@@ -312,7 +305,7 @@ export default function Home() {
   const startGame = () => {
     playSound('jump')
     setScore(0)
-    birdRef.current = { y: canvasSize.height / 2 - 50, velocity: 0 }
+    birdRef.current = { y: 300, velocity: 0 }
     pipesRef.current = []
     frameCountRef.current = 0
     isPlayingRef.current = true
@@ -384,6 +377,35 @@ export default function Home() {
     const interval = setInterval(fetchLeaderboard, 5000)
     return () => clearInterval(interval)
   }, [fetchLeaderboard])
+
+  // Get canvas dimensions
+  const getCanvasDimensions = () => {
+    if (isFullscreen) {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      return { width, height, isFullscreen: true }
+    }
+    const maxWidth = Math.min(window.innerWidth - 32, 400)
+    const maxHeight = Math.min(window.innerHeight - 300, 600)
+    let width = maxWidth
+    let height = width * 1.5
+    if (height > maxHeight) {
+      height = maxHeight
+      width = height / 1.5
+    }
+    return { width: Math.floor(width), height: Math.floor(height), isFullscreen: false }
+  }
+
+  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 600, isFullscreen: false })
+
+  useEffect(() => {
+    const updateSize = () => {
+      setCanvasSize(getCanvasDimensions())
+    }
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    return () => window.removeEventListener('resize', updateSize)
+  }, [isFullscreen])
 
   // Game loop
   useEffect(() => {
@@ -631,7 +653,7 @@ export default function Home() {
     }
   }, [gameState])
 
-  // Touch support for mobile
+  // Touch support
   useEffect(() => {
     const handleTouch = (e: TouchEvent) => {
       e.preventDefault()
@@ -660,6 +682,10 @@ export default function Home() {
         e.preventDefault()
         if (gameState === 'READY') startGame()
       }
+      // F key for fullscreen
+      if (e.code === 'KeyF' && gameState === 'PLAYING') {
+        toggleFullscreen()
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -682,51 +708,63 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center p-2 sm:p-4">
-      {/* Header */}
-      <header className="glass-panel w-full max-w-4xl p-2 sm:p-4 mb-2 sm:mb-4 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <h1 className="text-neon text-sm sm:text-xl font-pixel text-shadow-glow">
-            FLAPPY BIRD
-          </h1>
-          <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className="text-white text-xs sm:text-sm hover:text-neon transition-colors"
-          >
-            {soundEnabled ? '🔊' : '🔇'}
-          </button>
-        </div>
-        {player && (
+    <main className={`min-h-screen flex flex-col items-center p-2 sm:p-4 ${canvasSize.isFullscreen ? 'fixed inset-0 z-50 bg-black' : ''}`}>
+      {/* Header - hide in fullscreen */}
+      {!canvasSize.isFullscreen && (
+        <header className="glass-panel w-full max-w-4xl p-2 sm:p-4 mb-2 sm:mb-4 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2 sm:gap-4">
-            <span className="text-white text-xs sm:text-sm font-pixel">
-              {player.name}
-            </span>
-            {player.highScore > 0 && (
-              <span className="text-yellow-400 text-xs font-pixel hidden sm:inline">
-                BEST: {player.highScore}
-              </span>
-            )}
-            <button onClick={handleLogout} className="text-gray-400 hover:text-white text-xs font-pixel">
-              LOGOUT
+            <h1 className="text-neon text-sm sm:text-xl font-pixel text-shadow-glow">
+              FLAPPY BIRD
+            </h1>
+            <button
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              className="text-white text-xs sm:text-sm hover:text-neon transition-colors"
+            >
+              {soundEnabled ? '🔊' : '🔇'}
             </button>
           </div>
-        )}
-      </header>
+          {player && (
+            <div className="flex items-center gap-2 sm:gap-4">
+              <span className="text-white text-xs sm:text-sm font-pixel">
+                {player.name}
+              </span>
+              {player.highScore > 0 && (
+                <span className="text-yellow-400 text-xs font-pixel hidden sm:inline">
+                  BEST: {player.highScore}
+                </span>
+              )}
+              <button onClick={handleLogout} className="text-gray-400 hover:text-white text-xs font-pixel">
+                LOGOUT
+              </button>
+            </div>
+          )}
+        </header>
+      )}
+
+      {/* Fullscreen exit button */}
+      {canvasSize.isFullscreen && gameState !== 'NAME_INPUT' && (
+        <button
+          onClick={exitFullscreen}
+          className="fixed top-4 right-4 z-50 bg-black/50 text-white px-3 py-2 rounded font-pixel text-xs hover:bg-black/70"
+        >
+          ✕ EXIT
+        </button>
+      )}
 
       {/* Main content */}
-      <div className="flex flex-col lg:flex-row gap-2 sm:gap-4 w-full max-w-4xl">
+      <div className={`flex flex-col lg:flex-row gap-2 sm:gap-4 w-full max-w-4xl ${canvasSize.isFullscreen ? 'flex-1 justify-center' : ''}`}>
         {/* Game area */}
-        <div className="flex-1 flex flex-col items-center">
-          <div className="relative" ref={containerRef}>
+        <div className={`flex-1 flex flex-col items-center ${canvasSize.isFullscreen ? 'w-full h-full' : ''}`}>
+          <div className="relative" ref={gameContainerRef}>
             <canvas
               ref={canvasRef}
               width={canvasSize.width}
               height={canvasSize.height}
-              className="rounded-lg border-4 border-dark shadow-2xl cursor-pointer touch-none w-full max-w-[400px]"
+              className={`rounded-lg border-4 border-dark shadow-2xl cursor-pointer touch-none ${canvasSize.isFullscreen ? 'w-full h-full rounded-none border-0' : 'max-w-[400px]'}`}
               onClick={handleJump}
             />
 
-            {gameState === 'READY' && (
+            {gameState === 'READY' && !canvasSize.isFullscreen && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4">
                 <p className="text-white text-xs sm:text-sm font-pixel mb-2 sm:mb-4 animate-pulse text-center">
                   TAP OR PRESS SPACE TO START
@@ -735,8 +773,16 @@ export default function Home() {
               </div>
             )}
 
+            {gameState === 'READY' && canvasSize.isFullscreen && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-white text-lg font-pixel mb-4 animate-pulse text-center">
+                  TAP TO START
+                </p>
+              </div>
+            )}
+
             {gameState === 'GAME_OVER' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg p-4">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4">
                 <h2 className="text-red-500 text-lg sm:text-xl font-pixel mb-2 sm:mb-4">GAME OVER</h2>
                 <p className="text-white text-sm font-pixel mb-2">Score: {finalScore}</p>
                 {currentRank && (
@@ -748,8 +794,35 @@ export default function Home() {
                 >
                   PLAY AGAIN
                 </button>
-                <p className="text-gray-400 text-xs font-pixel mt-2 sm:mt-4">Press SPACE to play again</p>
+                <p className="text-gray-400 text-xs font-pixel mt-2 sm:mt-4">Press SPACE</p>
+                {canvasSize.isFullscreen && (
+                  <button
+                    onClick={exitFullscreen}
+                    className="mt-4 text-gray-400 text-xs font-pixel hover:text-white"
+                  >
+                    Exit fullscreen
+                  </button>
+                )}
               </div>
+            )}
+
+            {/* Fullscreen button */}
+            {!canvasSize.isFullscreen && gameState === 'PLAYING' && (
+              <button
+                onClick={enterFullscreen}
+                className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-xs font-pixel hover:bg-black/70"
+              >
+                ⛶ FULL
+              </button>
+            )}
+
+            {canvasSize.isFullscreen && gameState === 'PLAYING' && (
+              <button
+                onClick={toggleFullscreen}
+                className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-xs font-pixel hover:bg-black/70"
+              >
+                ⛶
+              </button>
             )}
           </div>
 
@@ -760,86 +833,88 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Side panels */}
-        <div className="flex flex-col gap-2 sm:gap-4 w-full lg:w-80">
-          {/* Leaderboard */}
-          <div className="glass-panel p-3 sm:p-4">
-            <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 bg-neon rounded-full animate-pulse"></span>
-              TOP PLAYERS
-            </h2>
-            <div className="space-y-2 max-h-32 sm:max-h-48 overflow-y-auto">
-              {leaderboard.length === 0 ? (
-                <p className="text-gray-400 text-xs font-pixel">No scores yet</p>
-              ) : (
-                leaderboard.map((entry) => (
-                  <div
-                    key={entry.rank}
-                    className={`flex items-center justify-between text-xs font-pixel ${
-                      player && entry.name === player.name ? 'text-neon' : 'text-gray-300'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className={entry.rank === 1 ? 'text-yellow-400' : entry.rank === 2 ? 'text-gray-300' : entry.rank === 3 ? 'text-amber-600' : ''}>
-                        #{entry.rank}
+        {/* Side panels - hide in fullscreen */}
+        {!canvasSize.isFullscreen && (
+          <div className="flex flex-col gap-2 sm:gap-4 w-full lg:w-80">
+            {/* Leaderboard */}
+            <div className="glass-panel p-3 sm:p-4">
+              <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 bg-neon rounded-full animate-pulse"></span>
+                TOP PLAYERS
+              </h2>
+              <div className="space-y-2 max-h-32 sm:max-h-48 overflow-y-auto">
+                {leaderboard.length === 0 ? (
+                  <p className="text-gray-400 text-xs font-pixel">No scores yet</p>
+                ) : (
+                  leaderboard.map((entry) => (
+                    <div
+                      key={entry.rank}
+                      className={`flex items-center justify-between text-xs font-pixel ${
+                        player && entry.name === player.name ? 'text-neon' : 'text-gray-300'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className={entry.rank === 1 ? 'text-yellow-400' : entry.rank === 2 ? 'text-gray-300' : entry.rank === 3 ? 'text-amber-600' : ''}>
+                          #{entry.rank}
+                        </span>
+                        <span className="truncate max-w-16 sm:max-w-24">{entry.name}</span>
                       </span>
-                      <span className="truncate max-w-16 sm:max-w-24">{entry.name}</span>
-                    </span>
-                    <span className="text-white">{entry.highScore}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Chat */}
-          <div className="glass-panel p-3 sm:p-4 flex-1 flex flex-col">
-            <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 bg-neon rounded-full animate-pulse"></span>
-              LIVE CHAT
-            </h2>
-            <div
-              ref={chatContainerRef}
-              className="flex-1 min-h-32 sm:min-h-48 max-h-40 sm:max-h-64 overflow-y-auto mb-2 sm:mb-3 space-y-2"
-            >
-              {chatMessages.length === 0 ? (
-                <p className="text-gray-500 text-xs font-pixel">No messages yet</p>
-              ) : (
-                chatMessages.map((msg) => (
-                  <div key={msg.id} className="animate-slide-in">
-                    <span className="font-pixel text-xs" style={{ color: getPlayerColor(msg.playerName) }}>
-                      {msg.playerName}:
-                    </span>
-                    <span className="text-gray-300 text-xs font-pixel ml-2">
-                      {msg.message}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-            {player && (
-              <div className="flex gap-2">
-                <input
-                  id="chat-input"
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value.slice(0, 100))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') sendMessage() }}
-                  placeholder={canSendMessage ? 'Type...' : 'Wait...'}
-                  disabled={!canSendMessage}
-                  className="flex-1 bg-dark/50 text-white text-xs font-pixel px-2 sm:px-3 py-2 rounded border border-gray-700 focus:border-neon transition-colors"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!canSendMessage || !chatInput.trim()}
-                  className="bg-neon text-dark px-2 sm:px-4 py-2 rounded font-pixel text-xs hover:bg-green-400 transition-colors disabled:opacity-50"
-                >
-                  SEND
-                </button>
+                      <span className="text-white">{entry.highScore}</span>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
+            </div>
+
+            {/* Chat */}
+            <div className="glass-panel p-3 sm:p-4 flex-1 flex flex-col">
+              <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 bg-neon rounded-full animate-pulse"></span>
+                LIVE CHAT
+              </h2>
+              <div
+                ref={chatContainerRef}
+                className="flex-1 min-h-32 sm:min-h-48 max-h-40 sm:max-h-64 overflow-y-auto mb-2 sm:mb-3 space-y-2"
+              >
+                {chatMessages.length === 0 ? (
+                  <p className="text-gray-500 text-xs font-pixel">No messages yet</p>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div key={msg.id} className="animate-slide-in">
+                      <span className="font-pixel text-xs" style={{ color: getPlayerColor(msg.playerName) }}>
+                        {msg.playerName}:
+                      </span>
+                      <span className="text-gray-300 text-xs font-pixel ml-2">
+                        {msg.message}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              {player && (
+                <div className="flex gap-2">
+                  <input
+                    id="chat-input"
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value.slice(0, 100))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') sendMessage() }}
+                    placeholder={canSendMessage ? 'Type...' : 'Wait...'}
+                    disabled={!canSendMessage}
+                    className="flex-1 bg-dark/50 text-white text-xs font-pixel px-2 sm:px-3 py-2 rounded border border-gray-700 focus:border-neon transition-colors"
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={!canSendMessage || !chatInput.trim()}
+                    className="bg-neon text-dark px-2 sm:px-4 py-2 rounded font-pixel text-xs hover:bg-green-400 transition-colors disabled:opacity-50"
+                  >
+                    SEND
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Name input modal */}
