@@ -23,7 +23,7 @@ interface ChatMessage {
 
 // Game constants
 const GRAVITY = 0.5
-const JUMP_FORCE = -8
+const JUMP_FORCE = -9
 const PIPE_SPEED = 3
 const PIPE_GAP = 150
 const PIPE_WIDTH = 60
@@ -38,7 +38,7 @@ const PLAYER_STORAGE_KEY = 'flappybird_player'
 const MESSAGES_STORAGE_KEY = 'flappybird_messages'
 const MAX_MESSAGES = 100
 
-// Sound manager class
+// Sound manager
 class SoundManager {
   private audioContext: AudioContext | null = null
 
@@ -130,6 +130,7 @@ export default function Home() {
   const [currentRank, setCurrentRank] = useState<number | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameContainerRef = useRef<HTMLDivElement>(null)
@@ -138,15 +139,24 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const soundManagerRef = useRef<SoundManager>(new SoundManager())
 
-  // Game state refs
-  const birdRef = useRef({ y: 300, velocity: 0 })
+  const birdRef = useRef({ y: 180, velocity: 0 })
   const pipesRef = useRef<Array<{ x: number; gapY: number; passed: boolean }>>([])
   const frameCountRef = useRef(0)
   const isPlayingRef = useRef(false)
   const gameOverTriggeredRef = useRef(false)
   const lastScoreRef = useRef(0)
 
-  // Fullscreen helpers
+  // Detect mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024 || 'ontouchstart' in window)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Fullscreen functions
   const enterFullscreen = () => {
     const elem = document.documentElement
     if (elem.requestFullscreen) {
@@ -166,15 +176,6 @@ export default function Home() {
     setIsFullscreen(false)
   }
 
-  const toggleFullscreen = () => {
-    if (isFullscreen) {
-      exitFullscreen()
-    } else {
-      enterFullscreen()
-    }
-  }
-
-  // Listen for fullscreen changes
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
@@ -211,9 +212,7 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (player) {
-      localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player))
-    }
+    if (player) localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player))
   }, [player])
 
   useEffect(() => {
@@ -305,13 +304,18 @@ export default function Home() {
   const startGame = () => {
     playSound('jump')
     setScore(0)
-    birdRef.current = { y: 300, velocity: 0 }
+    birdRef.current = { y: 180, velocity: 0 }
     pipesRef.current = []
     frameCountRef.current = 0
     isPlayingRef.current = true
     gameOverTriggeredRef.current = false
     lastScoreRef.current = 0
     setGameState('PLAYING')
+
+    // Auto fullscreen on mobile
+    if (isMobile && !isFullscreen) {
+      setTimeout(enterFullscreen, 100)
+    }
   }
 
   const handleGameOver = useCallback(() => {
@@ -378,15 +382,13 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [fetchLeaderboard])
 
-  // Get canvas dimensions
+  // Canvas dimensions
   const getCanvasDimensions = () => {
     if (isFullscreen) {
-      const width = window.innerWidth
-      const height = window.innerHeight
-      return { width, height, isFullscreen: true }
+      return { width: window.innerWidth, height: window.innerHeight, isFullscreen: true }
     }
     const maxWidth = Math.min(window.innerWidth - 32, 400)
-    const maxHeight = Math.min(window.innerHeight - 300, 600)
+    const maxHeight = Math.min(window.innerHeight - 250, 600)
     let width = maxWidth
     let height = width * 1.5
     if (height > maxHeight) {
@@ -404,7 +406,11 @@ export default function Home() {
     }
     updateSize()
     window.addEventListener('resize', updateSize)
-    return () => window.removeEventListener('resize', updateSize)
+    window.addEventListener('orientationchange', updateSize)
+    return () => {
+      window.removeEventListener('resize', updateSize)
+      window.removeEventListener('orientationchange', updateSize)
+    }
   }, [isFullscreen])
 
   // Game loop
@@ -477,7 +483,7 @@ export default function Home() {
           if (!pipe.passed && pipe.x + PIPE_WIDTH * scaleX < scaledBirdX) {
             pipe.passed = true
             setScore(s => {
-              if (s > lastScoreRef.current) {
+              if (s >= lastScoreRef.current) {
                 lastScoreRef.current = s + 1
                 playSound('score')
               }
@@ -566,7 +572,7 @@ export default function Home() {
         ctx.restore()
       } else {
         // Idle bird
-        const idleY = height / 2 - 50 * scaleY + Math.sin(Date.now() / 300) * 10
+        const idleY = height / 3 + Math.sin(Date.now() / 300) * 10
 
         ctx.save()
         ctx.translate(scaledBirdX, idleY)
@@ -653,24 +659,24 @@ export default function Home() {
     }
   }, [gameState])
 
-  // Touch support
-  useEffect(() => {
-    const handleTouch = (e: TouchEvent) => {
-      e.preventDefault()
-      handleJump()
-    }
+  // Touch handler
+  const handleTouch = useCallback((e: TouchEvent) => {
+    e.preventDefault()
+    handleJump()
+  }, [handleJump])
 
+  useEffect(() => {
     const canvas = canvasRef.current
-    if (canvas) {
-      canvas.addEventListener('touchstart', handleTouch, { passive: false })
-    }
+    if (!canvas) return
+
+    canvas.addEventListener('touchstart', handleTouch, { passive: false })
+    canvas.addEventListener('mousedown', handleJump)
 
     return () => {
-      if (canvas) {
-        canvas.removeEventListener('touchstart', handleTouch)
-      }
+      canvas.removeEventListener('touchstart', handleTouch)
+      canvas.removeEventListener('mousedown', handleJump)
     }
-  }, [handleJump])
+  }, [handleTouch, handleJump])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -681,10 +687,6 @@ export default function Home() {
       if (e.code === 'Enter' && gameState !== 'NAME_INPUT' && document.activeElement?.id !== 'chat-input') {
         e.preventDefault()
         if (gameState === 'READY') startGame()
-      }
-      // F key for fullscreen
-      if (e.code === 'KeyF' && gameState === 'PLAYING') {
-        toggleFullscreen()
       }
     }
 
@@ -708,9 +710,9 @@ export default function Home() {
   }
 
   return (
-    <main className={`min-h-screen flex flex-col items-center p-2 sm:p-4 ${canvasSize.isFullscreen ? 'fixed inset-0 z-50 bg-black' : ''}`}>
-      {/* Header - hide in fullscreen */}
-      {!canvasSize.isFullscreen && (
+    <main className={`min-h-screen flex flex-col items-center p-2 sm:p-4 ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : ''}`}>
+      {/* Header */}
+      {!isFullscreen && (
         <header className="glass-panel w-full max-w-4xl p-2 sm:p-4 mb-2 sm:mb-4 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2 sm:gap-4">
             <h1 className="text-neon text-sm sm:text-xl font-pixel text-shadow-glow">
@@ -723,61 +725,51 @@ export default function Home() {
               {soundEnabled ? '🔊' : '🔇'}
             </button>
           </div>
-          {player && (
-            <div className="flex items-center gap-2 sm:gap-4">
-              <span className="text-white text-xs sm:text-sm font-pixel">
-                {player.name}
-              </span>
-              {player.highScore > 0 && (
-                <span className="text-yellow-400 text-xs font-pixel hidden sm:inline">
-                  BEST: {player.highScore}
+          <div className="flex items-center gap-2 sm:gap-4">
+            {player && (
+              <>
+                <span className="text-white text-xs sm:text-sm font-pixel">
+                  {player.name}
                 </span>
-              )}
-              <button onClick={handleLogout} className="text-gray-400 hover:text-white text-xs font-pixel">
-                LOGOUT
-              </button>
-            </div>
-          )}
+                {player.highScore > 0 && (
+                  <span className="text-yellow-400 text-xs font-pixel hidden sm:inline">
+                    BEST: {player.highScore}
+                  </span>
+                )}
+                <button onClick={handleLogout} className="text-gray-400 hover:text-white text-xs font-pixel">
+                  LOGOUT
+                </button>
+              </>
+            )}
+            {/* Fullscreen button in header */}
+            <button
+              onClick={isFullscreen ? exitFullscreen : enterFullscreen}
+              className="bg-neon/20 text-neon px-2 sm:px-3 py-1 sm:py-2 rounded text-xs sm:text-sm font-pixel hover:bg-neon/30"
+            >
+              {isFullscreen ? '⛶ EXIT' : '⛶ FULL'}
+            </button>
+          </div>
         </header>
       )}
 
-      {/* Fullscreen exit button */}
-      {canvasSize.isFullscreen && gameState !== 'NAME_INPUT' && (
-        <button
-          onClick={exitFullscreen}
-          className="fixed top-4 right-4 z-50 bg-black/50 text-white px-3 py-2 rounded font-pixel text-xs hover:bg-black/70"
-        >
-          ✕ EXIT
-        </button>
-      )}
-
       {/* Main content */}
-      <div className={`flex flex-col lg:flex-row gap-2 sm:gap-4 w-full max-w-4xl ${canvasSize.isFullscreen ? 'flex-1 justify-center' : ''}`}>
+      <div className={`flex flex-col lg:flex-row gap-2 sm:gap-4 w-full max-w-4xl ${isFullscreen ? 'flex-1 justify-center' : ''}`}>
         {/* Game area */}
-        <div className={`flex-1 flex flex-col items-center ${canvasSize.isFullscreen ? 'w-full h-full' : ''}`}>
+        <div className={`flex-1 flex flex-col items-center ${isFullscreen ? 'w-full h-full' : ''}`}>
           <div className="relative" ref={gameContainerRef}>
             <canvas
               ref={canvasRef}
               width={canvasSize.width}
               height={canvasSize.height}
-              className={`rounded-lg border-4 border-dark shadow-2xl cursor-pointer touch-none ${canvasSize.isFullscreen ? 'w-full h-full rounded-none border-0' : 'max-w-[400px]'}`}
-              onClick={handleJump}
+              className={`rounded-lg border-4 border-dark shadow-2xl touch-none ${isFullscreen ? 'w-full h-full rounded-none border-0' : 'max-w-[400px]'}`}
             />
 
-            {gameState === 'READY' && !canvasSize.isFullscreen && (
+            {gameState === 'READY' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4">
                 <p className="text-white text-xs sm:text-sm font-pixel mb-2 sm:mb-4 animate-pulse text-center">
                   TAP OR PRESS SPACE TO START
                 </p>
                 <div className="text-neon text-xs font-pixel">READY!</div>
-              </div>
-            )}
-
-            {gameState === 'READY' && canvasSize.isFullscreen && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-white text-lg font-pixel mb-4 animate-pulse text-center">
-                  TAP TO START
-                </p>
               </div>
             )}
 
@@ -790,38 +782,29 @@ export default function Home() {
                 )}
                 <button
                   onClick={startGame}
-                  className="bg-neon text-dark px-4 sm:px-6 py-2 sm:py-3 rounded font-pixel text-xs hover:bg-green-400 transition-colors"
+                  className="bg-neon text-dark px-4 sm:px-6 py-2 sm:py-3 rounded font-pixel text-xs sm:text-sm hover:bg-green-400 transition-colors"
                 >
                   PLAY AGAIN
                 </button>
                 <p className="text-gray-400 text-xs font-pixel mt-2 sm:mt-4">Press SPACE</p>
-                {canvasSize.isFullscreen && (
+                {isFullscreen && (
                   <button
                     onClick={exitFullscreen}
-                    className="mt-4 text-gray-400 text-xs font-pixel hover:text-white"
+                    className="mt-4 bg-black/50 text-white px-4 py-2 rounded font-pixel text-xs hover:bg-black/70"
                   >
-                    Exit fullscreen
+                    ⛶ EXIT FULLSCREEN
                   </button>
                 )}
               </div>
             )}
 
-            {/* Fullscreen button */}
-            {!canvasSize.isFullscreen && gameState === 'PLAYING' && (
+            {/* Exit fullscreen button on canvas in mobile */}
+            {isFullscreen && gameState === 'PLAYING' && (
               <button
-                onClick={enterFullscreen}
-                className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-xs font-pixel hover:bg-black/70"
+                onClick={exitFullscreen}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white px-6 py-3 rounded-full font-pixel text-sm hover:bg-black/70"
               >
-                ⛶ FULL
-              </button>
-            )}
-
-            {canvasSize.isFullscreen && gameState === 'PLAYING' && (
-              <button
-                onClick={toggleFullscreen}
-                className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-xs font-pixel hover:bg-black/70"
-              >
-                ⛶
+                ⛶ EXIT
               </button>
             )}
           </div>
@@ -834,7 +817,7 @@ export default function Home() {
         </div>
 
         {/* Side panels - hide in fullscreen */}
-        {!canvasSize.isFullscreen && (
+        {!isFullscreen && (
           <div className="flex flex-col gap-2 sm:gap-4 w-full lg:w-80">
             {/* Leaderboard */}
             <div className="glass-panel p-3 sm:p-4">
