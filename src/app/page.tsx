@@ -22,12 +22,12 @@ interface ChatMessage {
 }
 
 // Game constants
-const GRAVITY = 0.5
-const JUMP_FORCE = -9
-const PIPE_SPEED = 3
-const PIPE_GAP = 150
+const GRAVITY = 0.35
+const JUMP_FORCE = -7
+const PIPE_SPEED = 2
+const PIPE_GAP = 160
 const PIPE_WIDTH = 60
-const PIPE_SPAWN_RATE = 90
+const PIPE_SPAWN_RATE = 120
 const BIRD_SIZE = 30
 const GROUND_HEIGHT = 80
 const BIRD_X_POSITION = 100
@@ -249,6 +249,8 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json()
         setCurrentRank(data.rank)
+        // Update player highScore locally
+        setPlayer(prev => prev ? { ...prev, highScore: data.highScore } : prev)
         fetchLeaderboard()
       }
     } catch (error) {
