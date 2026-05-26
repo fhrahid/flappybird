@@ -154,14 +154,16 @@ export default function Home() {
   const [canSendMessage, setCanSendMessage] = useState(true)
   const [currentRank, setCurrentRank] = useState<number | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
+  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 600 })
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const gameLoopRef = useRef<number | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const soundManagerRef = useRef<SoundManager>(new SoundManager())
 
-  // Game state refs for animation loop
+  // Game state refs
   const birdRef = useRef({ y: 300, velocity: 0 })
   const pipesRef = useRef<Array<{ x: number; gapY: number; passed: boolean }>>([])
   const frameCountRef = useRef(0)
@@ -169,7 +171,30 @@ export default function Home() {
   const gameOverTriggeredRef = useRef(false)
   const lastScoreRef = useRef(0)
 
-  // Load player and messages from storage
+  // Responsive canvas sizing
+  useEffect(() => {
+    const updateSize = () => {
+      const maxWidth = Math.min(window.innerWidth - 32, 400)
+      const maxHeight = Math.min(window.innerHeight - 300, 600)
+
+      // Maintain 2:3 aspect ratio
+      let width = maxWidth
+      let height = width * 1.5
+
+      if (height > maxHeight) {
+        height = maxHeight
+        width = height / 1.5
+      }
+
+      setCanvasSize({ width: Math.floor(width), height: Math.floor(height) })
+    }
+
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    return () => window.removeEventListener('resize', updateSize)
+  }, [])
+
+  // Load player and messages
   useEffect(() => {
     const stored = localStorage.getItem(PLAYER_STORAGE_KEY)
     if (stored) {
@@ -192,14 +217,12 @@ export default function Home() {
     }
   }, [])
 
-  // Save player to localStorage
   useEffect(() => {
     if (player) {
       localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player))
     }
   }, [player])
 
-  // Save messages to localStorage
   useEffect(() => {
     localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(chatMessages))
   }, [chatMessages])
@@ -215,20 +238,15 @@ export default function Home() {
     }
   }
 
-  // Fetch leaderboard
   const fetchLeaderboard = useCallback(async () => {
     try {
       const res = await fetch('/api/leaderboard')
-      if (res.ok) {
-        const data = await res.json()
-        setLeaderboard(data)
-      }
+      if (res.ok) setLeaderboard(await res.json())
     } catch (error) {
       console.error('Failed to fetch leaderboard:', error)
     }
   }, [])
 
-  // Submit score
   const submitScore = useCallback(async (playerId: string, finalScore: number) => {
     try {
       const res = await fetch('/api/score', {
@@ -286,11 +304,7 @@ export default function Home() {
       }
     } catch (error: any) {
       clearTimeout(timeoutId)
-      if (error.name === 'AbortError') {
-        setNameError('Server timeout. Please check your connection.')
-      } else {
-        setNameError('Network error. Please try again.')
-      }
+      setNameError(error.name === 'AbortError' ? 'Server timeout.' : 'Network error.')
       setIsSubmitting(false)
     }
   }
@@ -298,7 +312,7 @@ export default function Home() {
   const startGame = () => {
     playSound('jump')
     setScore(0)
-    birdRef.current = { y: 300, velocity: 0 }
+    birdRef.current = { y: canvasSize.height / 2 - 50, velocity: 0 }
     pipesRef.current = []
     frameCountRef.current = 0
     isPlayingRef.current = true
@@ -313,13 +327,9 @@ export default function Home() {
     playSound('gameOver')
 
     isPlayingRef.current = false
-    if (gameLoopRef.current) {
-      cancelAnimationFrame(gameLoopRef.current)
-    }
+    if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current)
     setFinalScore(score)
-    if (player) {
-      submitScore(player.id, score)
-    }
+    if (player) submitScore(player.id, score)
     setGameState('GAME_OVER')
   }, [score, player, submitScore])
 
@@ -353,24 +363,14 @@ export default function Home() {
         if (data.type !== 'connected') {
           setChatMessages(prev => {
             const newMessages = [...prev, data]
-            if (newMessages.length > MAX_MESSAGES) {
-              return newMessages.slice(-MAX_MESSAGES)
-            }
-            return newMessages
+            return newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages
           })
         }
-      } catch {
-        // Ignore parse errors
-      }
+      } catch {}
     }
 
-    eventSource.onerror = () => {
-      eventSource.close()
-    }
-
-    return () => {
-      eventSource.close()
-    }
+    eventSource.onerror = () => eventSource.close()
+    return () => eventSource.close()
   }, [player])
 
   useEffect(() => {
@@ -385,7 +385,7 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [fetchLeaderboard])
 
-  // Game rendering and loop
+  // Game loop
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -393,42 +393,45 @@ export default function Home() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    const scaleX = canvasSize.width / 400
+    const scaleY = canvasSize.height / 600
+    const scaledBirdX = BIRD_X_POSITION * scaleX
+    const scaledGroundHeight = GROUND_HEIGHT * scaleY
+
     const gameLoop = () => {
       const width = canvas.width
       const height = canvas.height
 
-      // Clear canvas
       ctx.fillStyle = '#87CEEB'
       ctx.fillRect(0, 0, width, height)
 
-      // Draw clouds
+      // Clouds
       ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
       for (let i = 0; i < 5; i++) {
         const cloudX = ((frameCountRef.current * 0.5 + i * 200) % (width + 100)) - 50
         const cloudY = 50 + i * 40
         ctx.beginPath()
-        ctx.arc(cloudX, cloudY, 30, 0, Math.PI * 2)
-        ctx.arc(cloudX + 30, cloudY - 10, 25, 0, Math.PI * 2)
-        ctx.arc(cloudX + 60, cloudY, 30, 0, Math.PI * 2)
+        ctx.arc(cloudX * scaleX, cloudY * scaleY, 30 * scaleX, 0, Math.PI * 2)
+        ctx.arc((cloudX + 30) * scaleX, (cloudY - 10) * scaleY, 25 * scaleX, 0, Math.PI * 2)
+        ctx.arc((cloudX + 60) * scaleX, cloudY * scaleY, 30 * scaleX, 0, Math.PI * 2)
         ctx.fill()
       }
 
       if (gameState === 'PLAYING' && isPlayingRef.current) {
         frameCountRef.current++
 
-        // Update bird
         birdRef.current.velocity += GRAVITY
         birdRef.current.y += birdRef.current.velocity
 
-        // Ceiling collision
+        // Ceiling
         if (birdRef.current.y < 0) {
           birdRef.current.y = 0
           birdRef.current.velocity = 0
         }
 
-        // Ground collision
-        if (birdRef.current.y + BIRD_SIZE > height - GROUND_HEIGHT) {
-          birdRef.current.y = height - GROUND_HEIGHT - BIRD_SIZE
+        // Ground
+        if (birdRef.current.y + BIRD_SIZE > height - scaledGroundHeight) {
+          birdRef.current.y = height - scaledGroundHeight - BIRD_SIZE
           handleGameOver()
           gameLoopRef.current = requestAnimationFrame(gameLoop)
           return
@@ -436,8 +439,8 @@ export default function Home() {
 
         // Spawn pipes
         if (frameCountRef.current % PIPE_SPAWN_RATE === 0) {
-          const minGapY = 100
-          const maxGapY = height - GROUND_HEIGHT - PIPE_GAP - 100
+          const minGapY = 100 * scaleY
+          const maxGapY = height - scaledGroundHeight - PIPE_GAP * scaleY - 100 * scaleY
           pipesRef.current.push({
             x: width,
             gapY: minGapY + Math.random() * (maxGapY - minGapY),
@@ -447,10 +450,9 @@ export default function Home() {
 
         // Update pipes
         pipesRef.current = pipesRef.current.filter(pipe => {
-          pipe.x -= PIPE_SPEED
+          pipe.x -= PIPE_SPEED * scaleX
 
-          // Check if bird passed pipe (score)
-          if (!pipe.passed && pipe.x + PIPE_WIDTH < BIRD_X_POSITION) {
+          if (!pipe.passed && pipe.x + PIPE_WIDTH * scaleX < scaledBirdX) {
             pipe.passed = true
             setScore(s => {
               if (s > lastScoreRef.current) {
@@ -461,23 +463,22 @@ export default function Home() {
             })
           }
 
-          // Collision detection
-          const birdLeft = BIRD_X_POSITION - 10
-          const birdRight = BIRD_X_POSITION + 15
-          const birdTop = birdRef.current.y + 5
-          const birdBottom = birdRef.current.y + BIRD_SIZE - 5
+          const birdLeft = scaledBirdX - 10 * scaleX
+          const birdRight = scaledBirdX + 15 * scaleX
+          const birdTop = birdRef.current.y + 5 * scaleY
+          const birdBottom = birdRef.current.y + BIRD_SIZE * scaleY - 5 * scaleY
 
-          const pipeLeft = pipe.x + 3
-          const pipeRight = pipe.x + PIPE_WIDTH - 3
+          const pipeLeft = pipe.x + 3 * scaleX
+          const pipeRight = pipe.x + PIPE_WIDTH * scaleX - 3 * scaleX
 
           if (birdRight > pipeLeft && birdLeft < pipeRight) {
-            if (birdTop < pipe.gapY || birdBottom > pipe.gapY + PIPE_GAP) {
+            if (birdTop < pipe.gapY || birdBottom > pipe.gapY + PIPE_GAP * scaleY) {
               handleGameOver()
               return false
             }
           }
 
-          return pipe.x > -PIPE_WIDTH
+          return pipe.x > -PIPE_WIDTH * scaleX
         })
 
         // Draw pipes
@@ -486,21 +487,21 @@ export default function Home() {
           ctx.strokeStyle = '#1a5a3a'
           ctx.lineWidth = 3
 
-          ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY)
-          ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY)
+          ctx.fillRect(pipe.x, 0, PIPE_WIDTH * scaleX, pipe.gapY)
+          ctx.strokeRect(pipe.x, 0, PIPE_WIDTH * scaleX, pipe.gapY)
 
           ctx.fillStyle = '#3CB371'
-          ctx.fillRect(pipe.x - 5, pipe.gapY - 25, PIPE_WIDTH + 10, 25)
-          ctx.strokeRect(pipe.x - 5, pipe.gapY - 25, PIPE_WIDTH + 10, 25)
+          ctx.fillRect(pipe.x - 5 * scaleX, pipe.gapY - 25 * scaleY, PIPE_WIDTH * scaleX + 10 * scaleX, 25 * scaleY)
+          ctx.strokeRect(pipe.x - 5 * scaleX, pipe.gapY - 25 * scaleY, PIPE_WIDTH * scaleX + 10 * scaleX, 25 * scaleY)
 
           ctx.fillStyle = '#2E8B57'
-          const bottomY = pipe.gapY + PIPE_GAP
-          ctx.fillRect(pipe.x, bottomY, PIPE_WIDTH, height - bottomY - GROUND_HEIGHT)
-          ctx.strokeRect(pipe.x, bottomY, PIPE_WIDTH, height - bottomY - GROUND_HEIGHT)
+          const bottomY = pipe.gapY + PIPE_GAP * scaleY
+          ctx.fillRect(pipe.x, bottomY, PIPE_WIDTH * scaleX, height - bottomY - scaledGroundHeight)
+          ctx.strokeRect(pipe.x, bottomY, PIPE_WIDTH * scaleX, height - bottomY - scaledGroundHeight)
 
           ctx.fillStyle = '#3CB371'
-          ctx.fillRect(pipe.x - 5, bottomY, PIPE_WIDTH + 10, 25)
-          ctx.strokeRect(pipe.x - 5, bottomY, PIPE_WIDTH + 10, 25)
+          ctx.fillRect(pipe.x - 5 * scaleX, bottomY, PIPE_WIDTH * scaleX + 10 * scaleX, 25 * scaleY)
+          ctx.strokeRect(pipe.x - 5 * scaleX, bottomY, PIPE_WIDTH * scaleX + 10 * scaleX, 25 * scaleY)
         })
 
         // Draw bird
@@ -508,97 +509,98 @@ export default function Home() {
         const rotation = Math.min(Math.max(birdRef.current.velocity * 3, -30), 90)
 
         ctx.save()
-        ctx.translate(BIRD_X_POSITION, birdY + BIRD_SIZE / 2)
+        ctx.translate(scaledBirdX, birdY + (BIRD_SIZE * scaleY) / 2)
         ctx.rotate((rotation * Math.PI) / 180)
+
+        const s = scaleX
 
         ctx.fillStyle = '#FFD700'
         ctx.beginPath()
-        ctx.ellipse(0, 0, 15, 12, 0, 0, Math.PI * 2)
+        ctx.ellipse(0, 0, 15 * s, 12 * s, 0, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = '#FFC800'
         ctx.beginPath()
-        ctx.ellipse(-3, 3, 8, 6, -0.3, 0, Math.PI * 2)
+        ctx.ellipse(-3 * s, 3 * s, 8 * s, 6 * s, -0.3, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = 'white'
         ctx.beginPath()
-        ctx.arc(8, -3, 6, 0, Math.PI * 2)
+        ctx.arc(8 * s, -3 * s, 6 * s, 0, Math.PI * 2)
         ctx.fill()
         ctx.fillStyle = 'black'
         ctx.beginPath()
-        ctx.arc(10, -3, 3, 0, Math.PI * 2)
+        ctx.arc(10 * s, -3 * s, 3 * s, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = '#FF8C00'
         ctx.beginPath()
-        ctx.moveTo(15, 0)
-        ctx.lineTo(25, 3)
-        ctx.lineTo(15, 6)
+        ctx.moveTo(15 * s, 0)
+        ctx.lineTo(25 * s, 3 * s)
+        ctx.lineTo(15 * s, 6 * s)
         ctx.closePath()
         ctx.fill()
 
         ctx.restore()
       } else {
         // Idle bird
-        const idleY = height / 2 - 50 + Math.sin(Date.now() / 300) * 10
+        const idleY = height / 2 - 50 * scaleY + Math.sin(Date.now() / 300) * 10
 
         ctx.save()
-        ctx.translate(BIRD_X_POSITION, idleY)
-        ctx.rotate(0)
+        ctx.translate(scaledBirdX, idleY)
+
+        const s = scaleX
 
         ctx.fillStyle = '#FFD700'
         ctx.beginPath()
-        ctx.ellipse(0, 0, 15, 12, 0, 0, Math.PI * 2)
+        ctx.ellipse(0, 0, 15 * s, 12 * s, 0, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = '#FFC800'
         ctx.beginPath()
-        ctx.ellipse(-3, 3, 8, 6, -0.3, 0, Math.PI * 2)
+        ctx.ellipse(-3 * s, 3 * s, 8 * s, 6 * s, -0.3, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = 'white'
         ctx.beginPath()
-        ctx.arc(8, -3, 6, 0, Math.PI * 2)
+        ctx.arc(8 * s, -3 * s, 6 * s, 0, Math.PI * 2)
         ctx.fill()
         ctx.fillStyle = 'black'
         ctx.beginPath()
-        ctx.arc(10, -3, 3, 0, Math.PI * 2)
+        ctx.arc(10 * s, -3 * s, 3 * s, 0, Math.PI * 2)
         ctx.fill()
 
         ctx.fillStyle = '#FF8C00'
         ctx.beginPath()
-        ctx.moveTo(15, 0)
-        ctx.lineTo(25, 3)
-        ctx.lineTo(15, 6)
+        ctx.moveTo(15 * s, 0)
+        ctx.lineTo(25 * s, 3 * s)
+        ctx.lineTo(15 * s, 6 * s)
         ctx.closePath()
         ctx.fill()
 
         ctx.restore()
       }
 
-      // Draw ground
+      // Ground
       ctx.fillStyle = '#228B22'
-      ctx.fillRect(0, height - GROUND_HEIGHT, width, 20)
-
+      ctx.fillRect(0, height - scaledGroundHeight, width, 20)
       ctx.fillStyle = '#8B4513'
-      ctx.fillRect(0, height - GROUND_HEIGHT + 20, width, GROUND_HEIGHT - 20)
-
+      ctx.fillRect(0, height - scaledGroundHeight + 20, width, scaledGroundHeight - 20)
       ctx.fillStyle = '#6B3410'
       for (let i = 0; i < width + 40; i += 40) {
         const offsetX = (frameCountRef.current * 2) % 40
-        ctx.fillRect(i - offsetX, height - GROUND_HEIGHT + 25, 20, 10)
+        ctx.fillRect(i - offsetX, height - scaledGroundHeight + 25, 20, 10)
       }
 
-      // Draw score on canvas
+      // Score
       if (gameState === 'PLAYING') {
         ctx.fillStyle = 'white'
         ctx.strokeStyle = 'black'
-        ctx.lineWidth = 4
-        ctx.font = 'bold 48px monospace'
+        ctx.lineWidth = 4 * scaleX
+        ctx.font = `bold ${48 * scaleX}px monospace`
         ctx.textAlign = 'center'
-        ctx.strokeText(score.toString(), width / 2, 60)
-        ctx.fillText(score.toString(), width / 2, 60)
+        ctx.strokeText(score.toString(), width / 2, 60 * scaleY)
+        ctx.fillText(score.toString(), width / 2, 60 * scaleY)
       }
 
       if (gameState === 'PLAYING') {
@@ -613,11 +615,9 @@ export default function Home() {
     }
 
     return () => {
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current)
-      }
+      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current)
     }
-  }, [gameState, handleGameOver, score])
+  }, [gameState, handleGameOver, score, canvasSize])
 
   const handleJump = useCallback(() => {
     playSound('jump')
@@ -625,13 +625,30 @@ export default function Home() {
       birdRef.current.velocity = JUMP_FORCE
     } else if (gameState === 'READY') {
       startGame()
-      setTimeout(() => {
-        birdRef.current.velocity = JUMP_FORCE
-      }, 0)
+      setTimeout(() => { birdRef.current.velocity = JUMP_FORCE }, 0)
     } else if (gameState === 'GAME_OVER') {
       startGame()
     }
   }, [gameState])
+
+  // Touch support for mobile
+  useEffect(() => {
+    const handleTouch = (e: TouchEvent) => {
+      e.preventDefault()
+      handleJump()
+    }
+
+    const canvas = canvasRef.current
+    if (canvas) {
+      canvas.addEventListener('touchstart', handleTouch, { passive: false })
+    }
+
+    return () => {
+      if (canvas) {
+        canvas.removeEventListener('touchstart', handleTouch)
+      }
+    }
+  }, [handleJump])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -641,9 +658,7 @@ export default function Home() {
       }
       if (e.code === 'Enter' && gameState !== 'NAME_INPUT' && document.activeElement?.id !== 'chat-input') {
         e.preventDefault()
-        if (gameState === 'READY') {
-          startGame()
-        }
+        if (gameState === 'READY') startGame()
       }
     }
 
@@ -654,9 +669,7 @@ export default function Home() {
   const getPlayerColor = (name: string) => {
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
     let hash = 0
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash)
-    }
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
     return colors[Math.abs(hash) % colors.length]
   }
 
@@ -669,34 +682,31 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center p-4">
+    <main className="min-h-screen flex flex-col items-center p-2 sm:p-4">
       {/* Header */}
-      <header className="glass-panel w-full max-w-4xl p-4 mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-neon text-lg md:text-xl font-pixel text-shadow-glow">
+      <header className="glass-panel w-full max-w-4xl p-2 sm:p-4 mb-2 sm:mb-4 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <h1 className="text-neon text-sm sm:text-xl font-pixel text-shadow-glow">
             FLAPPY BIRD
           </h1>
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className="text-white text-xs font-pixel hover:text-neon transition-colors"
+            className="text-white text-xs sm:text-sm hover:text-neon transition-colors"
           >
             {soundEnabled ? '🔊' : '🔇'}
           </button>
         </div>
         {player && (
-          <div className="flex items-center gap-4">
-            <span className="text-white text-xs font-pixel">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <span className="text-white text-xs sm:text-sm font-pixel">
               {player.name}
             </span>
             {player.highScore > 0 && (
-              <span className="text-yellow-400 text-xs font-pixel">
+              <span className="text-yellow-400 text-xs font-pixel hidden sm:inline">
                 BEST: {player.highScore}
               </span>
             )}
-            <button
-              onClick={handleLogout}
-              className="text-gray-400 hover:text-white text-xs font-pixel"
-            >
+            <button onClick={handleLogout} className="text-gray-400 hover:text-white text-xs font-pixel">
               LOGOUT
             </button>
           </div>
@@ -704,59 +714,61 @@ export default function Home() {
       </header>
 
       {/* Main content */}
-      <div className="flex flex-col lg:flex-row gap-4 w-full max-w-4xl">
+      <div className="flex flex-col lg:flex-row gap-2 sm:gap-4 w-full max-w-4xl">
         {/* Game area */}
         <div className="flex-1 flex flex-col items-center">
-          <div className="relative">
+          <div className="relative" ref={containerRef}>
             <canvas
               ref={canvasRef}
-              width={400}
-              height={600}
-              className="rounded-lg border-4 border-dark shadow-2xl cursor-pointer"
+              width={canvasSize.width}
+              height={canvasSize.height}
+              className="rounded-lg border-4 border-dark shadow-2xl cursor-pointer touch-none w-full max-w-[400px]"
               onClick={handleJump}
             />
 
-            {/* Overlay for READY state */}
             {gameState === 'READY' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg">
-                <p className="text-white text-sm font-pixel mb-4 animate-pulse">
-                  CLICK OR PRESS SPACE TO START
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 rounded-lg p-4">
+                <p className="text-white text-xs sm:text-sm font-pixel mb-2 sm:mb-4 animate-pulse text-center">
+                  TAP OR PRESS SPACE TO START
                 </p>
-                <div className="text-neon text-xs font-pixel">
-                  READY!
-                </div>
+                <div className="text-neon text-xs font-pixel">READY!</div>
               </div>
             )}
 
-            {/* Game over overlay */}
             {gameState === 'GAME_OVER' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
-                <h2 className="text-red-500 text-xl font-pixel mb-4">GAME OVER</h2>
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg p-4">
+                <h2 className="text-red-500 text-lg sm:text-xl font-pixel mb-2 sm:mb-4">GAME OVER</h2>
                 <p className="text-white text-sm font-pixel mb-2">Score: {finalScore}</p>
                 {currentRank && (
-                  <p className="text-neon text-xs font-pixel mb-4">Rank: #{currentRank}</p>
+                  <p className="text-neon text-xs font-pixel mb-2 sm:mb-4">Rank: #{currentRank}</p>
                 )}
                 <button
                   onClick={startGame}
-                  className="bg-neon text-dark px-6 py-3 rounded font-pixel text-xs hover:bg-green-400 transition-colors"
+                  className="bg-neon text-dark px-4 sm:px-6 py-2 sm:py-3 rounded font-pixel text-xs hover:bg-green-400 transition-colors"
                 >
                   PLAY AGAIN
                 </button>
-                <p className="text-gray-400 text-xs font-pixel mt-4">Press SPACE to play again</p>
+                <p className="text-gray-400 text-xs font-pixel mt-2 sm:mt-4">Press SPACE to play again</p>
               </div>
             )}
+          </div>
+
+          {/* Score below canvas on mobile */}
+          <div className="lg:hidden glass-panel px-4 py-2 mt-2">
+            <span className="text-white text-xs font-pixel">SCORE: </span>
+            <span className="text-neon text-sm font-pixel text-shadow-glow">{score}</span>
           </div>
         </div>
 
         {/* Side panels */}
-        <div className="flex flex-col gap-4 w-full lg:w-80">
+        <div className="flex flex-col gap-2 sm:gap-4 w-full lg:w-80">
           {/* Leaderboard */}
-          <div className="glass-panel p-4">
-            <h2 className="text-neon text-xs font-pixel mb-4 flex items-center gap-2">
+          <div className="glass-panel p-3 sm:p-4">
+            <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-neon rounded-full animate-pulse"></span>
               TOP PLAYERS
             </h2>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="space-y-2 max-h-32 sm:max-h-48 overflow-y-auto">
               {leaderboard.length === 0 ? (
                 <p className="text-gray-400 text-xs font-pixel">No scores yet</p>
               ) : (
@@ -768,14 +780,10 @@ export default function Home() {
                     }`}
                   >
                     <span className="flex items-center gap-2">
-                      <span className={
-                        entry.rank === 1 ? 'text-yellow-400' :
-                        entry.rank === 2 ? 'text-gray-300' :
-                        entry.rank === 3 ? 'text-amber-600' : ''
-                      }>
+                      <span className={entry.rank === 1 ? 'text-yellow-400' : entry.rank === 2 ? 'text-gray-300' : entry.rank === 3 ? 'text-amber-600' : ''}>
                         #{entry.rank}
                       </span>
-                      <span className="truncate max-w-24">{entry.name}</span>
+                      <span className="truncate max-w-16 sm:max-w-24">{entry.name}</span>
                     </span>
                     <span className="text-white">{entry.highScore}</span>
                   </div>
@@ -785,24 +793,21 @@ export default function Home() {
           </div>
 
           {/* Chat */}
-          <div className="glass-panel p-4 flex-1 flex flex-col">
-            <h2 className="text-neon text-xs font-pixel mb-4 flex items-center gap-2">
+          <div className="glass-panel p-3 sm:p-4 flex-1 flex flex-col">
+            <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-neon rounded-full animate-pulse"></span>
               LIVE CHAT
             </h2>
             <div
               ref={chatContainerRef}
-              className="flex-1 min-h-48 max-h-64 overflow-y-auto mb-3 space-y-2"
+              className="flex-1 min-h-32 sm:min-h-48 max-h-40 sm:max-h-64 overflow-y-auto mb-2 sm:mb-3 space-y-2"
             >
               {chatMessages.length === 0 ? (
                 <p className="text-gray-500 text-xs font-pixel">No messages yet</p>
               ) : (
                 chatMessages.map((msg) => (
                   <div key={msg.id} className="animate-slide-in">
-                    <span
-                      className="font-pixel text-xs"
-                      style={{ color: getPlayerColor(msg.playerName) }}
-                    >
+                    <span className="font-pixel text-xs" style={{ color: getPlayerColor(msg.playerName) }}>
                       {msg.playerName}:
                     </span>
                     <span className="text-gray-300 text-xs font-pixel ml-2">
@@ -819,19 +824,15 @@ export default function Home() {
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value.slice(0, 100))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      sendMessage()
-                    }
-                  }}
-                  placeholder={canSendMessage ? 'Type a message...' : 'Wait...'}
+                  onKeyDown={(e) => { if (e.key === 'Enter') sendMessage() }}
+                  placeholder={canSendMessage ? 'Type...' : 'Wait...'}
                   disabled={!canSendMessage}
-                  className="flex-1 bg-dark/50 text-white text-xs font-pixel px-3 py-2 rounded border border-gray-700 focus:border-neon transition-colors"
+                  className="flex-1 bg-dark/50 text-white text-xs font-pixel px-2 sm:px-3 py-2 rounded border border-gray-700 focus:border-neon transition-colors"
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!canSendMessage || !chatInput.trim()}
-                  className="bg-neon text-dark px-4 py-2 rounded font-pixel text-xs hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-neon text-dark px-2 sm:px-4 py-2 rounded font-pixel text-xs hover:bg-green-400 transition-colors disabled:opacity-50"
                 >
                   SEND
                 </button>
@@ -843,19 +844,16 @@ export default function Home() {
 
       {/* Name input modal */}
       {gameState === 'NAME_INPUT' && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="glass-panel p-8 max-w-md w-full mx-4 animate-float">
-            <h2 className="text-neon text-lg font-pixel text-center mb-6 text-shadow-glow">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="glass-panel p-6 sm:p-8 max-w-md w-full mx-4 animate-float">
+            <h2 className="text-neon text-sm sm:text-lg font-pixel text-center mb-4 sm:mb-6 text-shadow-glow">
               ENTER YOUR NAME
             </h2>
             <form onSubmit={handleNameSubmit}>
               <input
                 type="text"
                 value={playerName}
-                onChange={(e) => {
-                  setPlayerName(e.target.value)
-                  setNameError('')
-                }}
+                onChange={(e) => { setPlayerName(e.target.value); setNameError('') }}
                 placeholder="Your name..."
                 maxLength={15}
                 autoFocus
@@ -867,7 +865,7 @@ export default function Home() {
               <button
                 type="submit"
                 disabled={isSubmitting || playerName.trim().length < 2}
-                className="w-full bg-neon text-dark py-3 rounded font-pixel text-sm hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-neon text-dark py-3 rounded font-pixel text-sm hover:bg-green-400 transition-colors disabled:opacity-50"
               >
                 {isSubmitting ? 'PLEASE WAIT...' : 'START PLAYING'}
               </button>
