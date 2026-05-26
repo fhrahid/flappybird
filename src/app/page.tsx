@@ -656,13 +656,18 @@ export default function Home() {
     } else if (gameState === 'READY') {
       startGame()
     }
+    // Don't restart on click in GAME_OVER - only button should work
   }, [gameState])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         e.preventDefault()
-        handleJump()
+        if (gameState === 'PLAYING' || gameState === 'READY') {
+          handleJump()
+        } else if (gameState === 'GAME_OVER') {
+          startGame()
+        }
       }
       if (e.code === 'Enter' && gameState !== 'NAME_INPUT' && document.activeElement?.id !== 'chat-input') {
         e.preventDefault()
@@ -672,7 +677,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleJump, gameState])
+  }, [gameState, handleJump])
 
   const getPlayerColor = (name: string) => {
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
