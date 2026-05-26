@@ -30,13 +30,117 @@ const PIPE_WIDTH = 60
 const PIPE_SPAWN_RATE = 90
 const BIRD_SIZE = 30
 const GROUND_HEIGHT = 80
-const BIRD_X_POSITION = 100 // Bird is positioned at x=100
+const BIRD_X_POSITION = 100
 
 type GameState = 'NAME_INPUT' | 'READY' | 'PLAYING' | 'GAME_OVER'
 
 const PLAYER_STORAGE_KEY = 'flappybird_player'
 const MESSAGES_STORAGE_KEY = 'flappybird_messages'
 const MAX_MESSAGES = 100
+
+// Sound manager class
+class SoundManager {
+  private audioContext: AudioContext | null = null
+
+  private getContext(): AudioContext {
+    if (!this.audioContext) {
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+    return this.audioContext
+  }
+
+  playJump() {
+    try {
+      const ctx = this.getContext()
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+
+      oscillator.frequency.setValueAtTime(400, ctx.currentTime)
+      oscillator.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1)
+
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+
+      oscillator.start(ctx.currentTime)
+      oscillator.stop(ctx.currentTime + 0.1)
+    } catch (e) {
+      console.log('Audio not supported')
+    }
+  }
+
+  playClick() {
+    try {
+      const ctx = this.getContext()
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+
+      oscillator.type = 'square'
+      oscillator.frequency.setValueAtTime(800, ctx.currentTime)
+
+      gainNode.gain.setValueAtTime(0.15, ctx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05)
+
+      oscillator.start(ctx.currentTime)
+      oscillator.stop(ctx.currentTime + 0.05)
+    } catch (e) {
+      console.log('Audio not supported')
+    }
+  }
+
+  playGameOver() {
+    try {
+      const ctx = this.getContext()
+      const frequencies = [300, 250, 200]
+
+      frequencies.forEach((freq, i) => {
+        const oscillator = ctx.createOscillator()
+        const gainNode = ctx.createGain()
+
+        oscillator.connect(gainNode)
+        gainNode.connect(ctx.destination)
+
+        oscillator.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15)
+        oscillator.type = 'sawtooth'
+
+        gainNode.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.15)
+
+        oscillator.start(ctx.currentTime + i * 0.15)
+        oscillator.stop(ctx.currentTime + i * 0.15 + 0.15)
+      })
+    } catch (e) {
+      console.log('Audio not supported')
+    }
+  }
+
+  playScore() {
+    try {
+      const ctx = this.getContext()
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+      oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.05)
+
+      gainNode.gain.setValueAtTime(0.2, ctx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+
+      oscillator.start(ctx.currentTime)
+      oscillator.stop(ctx.currentTime + 0.1)
+    } catch (e) {
+      console.log('Audio not supported')
+    }
+  }
+}
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>('NAME_INPUT')
@@ -49,11 +153,13 @@ export default function Home() {
   const [chatInput, setChatInput] = useState('')
   const [canSendMessage, setCanSendMessage] = useState(true)
   const [currentRank, setCurrentRank] = useState<number | null>(null)
+  const [soundEnabled, setSoundEnabled] = useState(true)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const gameLoopRef = useRef<number | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const soundManagerRef = useRef<SoundManager>(new SoundManager())
 
   // Game state refs for animation loop
   const birdRef = useRef({ y: 300, velocity: 0 })
@@ -61,6 +167,7 @@ export default function Home() {
   const frameCountRef = useRef(0)
   const isPlayingRef = useRef(false)
   const gameOverTriggeredRef = useRef(false)
+  const lastScoreRef = useRef(0)
 
   // Load player and messages from storage
   useEffect(() => {
@@ -75,7 +182,6 @@ export default function Home() {
       }
     }
 
-    // Load cached messages first
     const cachedMessages = localStorage.getItem(MESSAGES_STORAGE_KEY)
     if (cachedMessages) {
       try {
@@ -86,38 +192,28 @@ export default function Home() {
     }
   }, [])
 
-  // Fetch historical messages from API when player is set
-  useEffect(() => {
-    if (!player) return
-
-    const fetchMessages = async () => {
-      try {
-        const res = await fetch('/api/chat')
-        if (res.ok) {
-          const data = await res.json()
-          if (data.length > 0) {
-            setChatMessages(data.slice(-MAX_MESSAGES))
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch messages:', error)
-      }
-    }
-
-    fetchMessages()
-  }, [player])
-
-  // Save player to localStorage whenever it changes
+  // Save player to localStorage
   useEffect(() => {
     if (player) {
       localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player))
     }
   }, [player])
 
-  // Save messages to localStorage whenever they change
+  // Save messages to localStorage
   useEffect(() => {
     localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(chatMessages))
   }, [chatMessages])
+
+  const playSound = (sound: 'jump' | 'click' | 'gameOver' | 'score') => {
+    if (!soundEnabled) return
+    const manager = soundManagerRef.current
+    switch (sound) {
+      case 'jump': manager.playJump(); break
+      case 'click': manager.playClick(); break
+      case 'gameOver': manager.playGameOver(); break
+      case 'score': manager.playScore(); break
+    }
+  }
 
   // Fetch leaderboard
   const fetchLeaderboard = useCallback(async () => {
@@ -153,9 +249,9 @@ export default function Home() {
   const [nameError, setNameError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Handle name submission
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    playSound('click')
     const trimmedName = playerName.trim()
     if (trimmedName.length < 2) {
       setNameError('Name must be at least 2 characters')
@@ -190,7 +286,6 @@ export default function Home() {
       }
     } catch (error: any) {
       clearTimeout(timeoutId)
-      console.error('Failed to create player:', error)
       if (error.name === 'AbortError') {
         setNameError('Server timeout. Please check your connection.')
       } else {
@@ -200,22 +295,22 @@ export default function Home() {
     }
   }
 
-  // Start game
   const startGame = () => {
+    playSound('jump')
     setScore(0)
     birdRef.current = { y: 300, velocity: 0 }
     pipesRef.current = []
     frameCountRef.current = 0
     isPlayingRef.current = true
     gameOverTriggeredRef.current = false
+    lastScoreRef.current = 0
     setGameState('PLAYING')
   }
 
-  // Game over
   const handleGameOver = useCallback(() => {
-    // Prevent multiple game over triggers
     if (gameOverTriggeredRef.current) return
     gameOverTriggeredRef.current = true
+    playSound('gameOver')
 
     isPlayingRef.current = false
     if (gameLoopRef.current) {
@@ -228,8 +323,8 @@ export default function Home() {
     setGameState('GAME_OVER')
   }, [score, player, submitScore])
 
-  // Send chat message
   const sendMessage = async () => {
+    playSound('click')
     if (!chatInput.trim() || !player || !canSendMessage) return
 
     try {
@@ -246,7 +341,6 @@ export default function Home() {
     }
   }
 
-  // Setup SSE for chat
   useEffect(() => {
     if (!player) return
 
@@ -259,7 +353,6 @@ export default function Home() {
         if (data.type !== 'connected') {
           setChatMessages(prev => {
             const newMessages = [...prev, data]
-            // Keep only last 100 messages
             if (newMessages.length > MAX_MESSAGES) {
               return newMessages.slice(-MAX_MESSAGES)
             }
@@ -272,7 +365,6 @@ export default function Home() {
     }
 
     eventSource.onerror = () => {
-      // Don't clear messages on error, just close
       eventSource.close()
     }
 
@@ -281,14 +373,12 @@ export default function Home() {
     }
   }, [player])
 
-  // Auto-scroll chat
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
   }, [chatMessages])
 
-  // Fetch leaderboard periodically
   useEffect(() => {
     fetchLeaderboard()
     const interval = setInterval(fetchLeaderboard, 5000)
@@ -330,7 +420,7 @@ export default function Home() {
         birdRef.current.velocity += GRAVITY
         birdRef.current.y += birdRef.current.velocity
 
-        // Ceiling collision - prevent bird from going above canvas
+        // Ceiling collision
         if (birdRef.current.y < 0) {
           birdRef.current.y = 0
           birdRef.current.velocity = 0
@@ -362,17 +452,23 @@ export default function Home() {
           // Check if bird passed pipe (score)
           if (!pipe.passed && pipe.x + PIPE_WIDTH < BIRD_X_POSITION) {
             pipe.passed = true
-            setScore(s => s + 1)
+            setScore(s => {
+              if (s > lastScoreRef.current) {
+                lastScoreRef.current = s + 1
+                playSound('score')
+              }
+              return s + 1
+            })
           }
 
-          // Collision detection - bird is at x=BIRD_X_POSITION
-          const birdLeft = BIRD_X_POSITION - 12
-          const birdRight = BIRD_X_POSITION + 12
-          const birdTop = birdRef.current.y + 5 // Add small margin
+          // Collision detection
+          const birdLeft = BIRD_X_POSITION - 10
+          const birdRight = BIRD_X_POSITION + 15
+          const birdTop = birdRef.current.y + 5
           const birdBottom = birdRef.current.y + BIRD_SIZE - 5
 
-          const pipeLeft = pipe.x + 5 // Add small margin
-          const pipeRight = pipe.x + PIPE_WIDTH - 5
+          const pipeLeft = pipe.x + 3
+          const pipeRight = pipe.x + PIPE_WIDTH - 3
 
           if (birdRight > pipeLeft && birdLeft < pipeRight) {
             if (birdTop < pipe.gapY || birdBottom > pipe.gapY + PIPE_GAP) {
@@ -390,22 +486,18 @@ export default function Home() {
           ctx.strokeStyle = '#1a5a3a'
           ctx.lineWidth = 3
 
-          // Top pipe
           ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY)
           ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY)
 
-          // Top pipe cap
           ctx.fillStyle = '#3CB371'
           ctx.fillRect(pipe.x - 5, pipe.gapY - 25, PIPE_WIDTH + 10, 25)
           ctx.strokeRect(pipe.x - 5, pipe.gapY - 25, PIPE_WIDTH + 10, 25)
 
-          // Bottom pipe
           ctx.fillStyle = '#2E8B57'
           const bottomY = pipe.gapY + PIPE_GAP
           ctx.fillRect(pipe.x, bottomY, PIPE_WIDTH, height - bottomY - GROUND_HEIGHT)
           ctx.strokeRect(pipe.x, bottomY, PIPE_WIDTH, height - bottomY - GROUND_HEIGHT)
 
-          // Bottom pipe cap
           ctx.fillStyle = '#3CB371'
           ctx.fillRect(pipe.x - 5, bottomY, PIPE_WIDTH + 10, 25)
           ctx.strokeRect(pipe.x - 5, bottomY, PIPE_WIDTH + 10, 25)
@@ -419,19 +511,16 @@ export default function Home() {
         ctx.translate(BIRD_X_POSITION, birdY + BIRD_SIZE / 2)
         ctx.rotate((rotation * Math.PI) / 180)
 
-        // Bird body
         ctx.fillStyle = '#FFD700'
         ctx.beginPath()
         ctx.ellipse(0, 0, 15, 12, 0, 0, Math.PI * 2)
         ctx.fill()
 
-        // Wing
         ctx.fillStyle = '#FFC800'
         ctx.beginPath()
         ctx.ellipse(-3, 3, 8, 6, -0.3, 0, Math.PI * 2)
         ctx.fill()
 
-        // Eye
         ctx.fillStyle = 'white'
         ctx.beginPath()
         ctx.arc(8, -3, 6, 0, Math.PI * 2)
@@ -441,7 +530,6 @@ export default function Home() {
         ctx.arc(10, -3, 3, 0, Math.PI * 2)
         ctx.fill()
 
-        // Beak
         ctx.fillStyle = '#FF8C00'
         ctx.beginPath()
         ctx.moveTo(15, 0)
@@ -452,7 +540,7 @@ export default function Home() {
 
         ctx.restore()
       } else {
-        // Draw static bird in idle position
+        // Idle bird
         const idleY = height / 2 - 50 + Math.sin(Date.now() / 300) * 10
 
         ctx.save()
@@ -496,11 +584,21 @@ export default function Home() {
       ctx.fillStyle = '#8B4513'
       ctx.fillRect(0, height - GROUND_HEIGHT + 20, width, GROUND_HEIGHT - 20)
 
-      // Ground pattern
       ctx.fillStyle = '#6B3410'
       for (let i = 0; i < width + 40; i += 40) {
         const offsetX = (frameCountRef.current * 2) % 40
         ctx.fillRect(i - offsetX, height - GROUND_HEIGHT + 25, 20, 10)
+      }
+
+      // Draw score on canvas
+      if (gameState === 'PLAYING') {
+        ctx.fillStyle = 'white'
+        ctx.strokeStyle = 'black'
+        ctx.lineWidth = 4
+        ctx.font = 'bold 48px monospace'
+        ctx.textAlign = 'center'
+        ctx.strokeText(score.toString(), width / 2, 60)
+        ctx.fillText(score.toString(), width / 2, 60)
       }
 
       if (gameState === 'PLAYING') {
@@ -519,10 +617,10 @@ export default function Home() {
         cancelAnimationFrame(gameLoopRef.current)
       }
     }
-  }, [gameState, handleGameOver])
+  }, [gameState, handleGameOver, score])
 
-  // Handle jump
   const handleJump = useCallback(() => {
+    playSound('jump')
     if (gameState === 'PLAYING') {
       birdRef.current.velocity = JUMP_FORCE
     } else if (gameState === 'READY') {
@@ -530,10 +628,11 @@ export default function Home() {
       setTimeout(() => {
         birdRef.current.velocity = JUMP_FORCE
       }, 0)
+    } else if (gameState === 'GAME_OVER') {
+      startGame()
     }
   }, [gameState])
 
-  // Keyboard and click handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -552,7 +651,6 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleJump, gameState])
 
-  // Get player color for chat
   const getPlayerColor = (name: string) => {
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
     let hash = 0
@@ -562,8 +660,8 @@ export default function Home() {
     return colors[Math.abs(hash) % colors.length]
   }
 
-  // Handle logout
   const handleLogout = () => {
+    playSound('click')
     localStorage.removeItem(PLAYER_STORAGE_KEY)
     setPlayer(null)
     setGameState('NAME_INPUT')
@@ -574,9 +672,17 @@ export default function Home() {
     <main className="min-h-screen flex flex-col items-center p-4">
       {/* Header */}
       <header className="glass-panel w-full max-w-4xl p-4 mb-4 flex items-center justify-between">
-        <h1 className="text-neon text-lg md:text-xl font-pixel text-shadow-glow">
-          FLAPPY BIRD
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-neon text-lg md:text-xl font-pixel text-shadow-glow">
+            FLAPPY BIRD
+          </h1>
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="text-white text-xs font-pixel hover:text-neon transition-colors"
+          >
+            {soundEnabled ? '🔊' : '🔇'}
+          </button>
+        </div>
         {player && (
           <div className="flex items-center gap-4">
             <span className="text-white text-xs font-pixel">
@@ -617,7 +723,7 @@ export default function Home() {
                   CLICK OR PRESS SPACE TO START
                 </p>
                 <div className="text-neon text-xs font-pixel">
-                  {score === 0 ? 'READY!' : `Score: ${score}`}
+                  READY!
                 </div>
               </div>
             )}
@@ -636,14 +742,9 @@ export default function Home() {
                 >
                   PLAY AGAIN
                 </button>
+                <p className="text-gray-400 text-xs font-pixel mt-4">Press SPACE to play again</p>
               </div>
             )}
-          </div>
-
-          {/* Score display */}
-          <div className="glass-panel px-6 py-3 mt-4">
-            <span className="text-white text-xs font-pixel">SCORE: </span>
-            <span className="text-neon text-lg font-pixel text-shadow-glow">{score}</span>
           </div>
         </div>
 
