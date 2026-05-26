@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
-import { ObjectId } from 'mongodb'
 import { connections } from '@/lib/chat-store'
+import { ObjectId } from 'mongodb'
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,5 +58,27 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error sending message:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
+  }
+}
+
+// Get recent messages
+export async function GET() {
+  try {
+    const db = await getDb()
+    const messages = await db.collection('messages')
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray()
+
+    return NextResponse.json(messages.reverse().map(m => ({
+      id: m._id.toString(),
+      playerName: m.playerName,
+      message: m.content,
+      timestamp: m.createdAt
+    })))
+  } catch (error: any) {
+    console.error('Error fetching messages:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

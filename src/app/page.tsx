@@ -30,8 +30,13 @@ const PIPE_WIDTH = 60
 const PIPE_SPAWN_RATE = 90
 const BIRD_SIZE = 30
 const GROUND_HEIGHT = 80
+const BIRD_X_POSITION = 100 // Bird is positioned at x=100
 
 type GameState = 'NAME_INPUT' | 'READY' | 'PLAYING' | 'GAME_OVER'
+
+const PLAYER_STORAGE_KEY = 'flappybird_player'
+const MESSAGES_STORAGE_KEY = 'flappybird_messages'
+const MAX_MESSAGES = 100
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>('NAME_INPUT')
@@ -55,6 +60,64 @@ export default function Home() {
   const pipesRef = useRef<Array<{ x: number; gapY: number; passed: boolean }>>([])
   const frameCountRef = useRef(0)
   const isPlayingRef = useRef(false)
+  const gameOverTriggeredRef = useRef(false)
+
+  // Load player and messages from storage
+  useEffect(() => {
+    const stored = localStorage.getItem(PLAYER_STORAGE_KEY)
+    if (stored) {
+      try {
+        const playerData = JSON.parse(stored)
+        setPlayer(playerData)
+        setGameState('READY')
+      } catch {
+        localStorage.removeItem(PLAYER_STORAGE_KEY)
+      }
+    }
+
+    // Load cached messages first
+    const cachedMessages = localStorage.getItem(MESSAGES_STORAGE_KEY)
+    if (cachedMessages) {
+      try {
+        setChatMessages(JSON.parse(cachedMessages))
+      } catch {
+        localStorage.removeItem(MESSAGES_STORAGE_KEY)
+      }
+    }
+  }, [])
+
+  // Fetch historical messages from API when player is set
+  useEffect(() => {
+    if (!player) return
+
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch('/api/chat')
+        if (res.ok) {
+          const data = await res.json()
+          if (data.length > 0) {
+            setChatMessages(data.slice(-MAX_MESSAGES))
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch messages:', error)
+      }
+    }
+
+    fetchMessages()
+  }, [player])
+
+  // Save player to localStorage whenever it changes
+  useEffect(() => {
+    if (player) {
+      localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player))
+    }
+  }, [player])
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(chatMessages))
+  }, [chatMessages])
 
   // Fetch leaderboard
   const fetchLeaderboard = useCallback(async () => {
@@ -106,7 +169,6 @@ export default function Home() {
     setIsSubmitting(true)
     setNameError('')
 
-    // Client-side timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000)
 
@@ -145,11 +207,16 @@ export default function Home() {
     pipesRef.current = []
     frameCountRef.current = 0
     isPlayingRef.current = true
+    gameOverTriggeredRef.current = false
     setGameState('PLAYING')
   }
 
   // Game over
   const handleGameOver = useCallback(() => {
+    // Prevent multiple game over triggers
+    if (gameOverTriggeredRef.current) return
+    gameOverTriggeredRef.current = true
+
     isPlayingRef.current = false
     if (gameLoopRef.current) {
       cancelAnimationFrame(gameLoopRef.current)
@@ -190,7 +257,14 @@ export default function Home() {
       try {
         const data = JSON.parse(event.data)
         if (data.type !== 'connected') {
-          setChatMessages(prev => [...prev.slice(-49), data])
+          setChatMessages(prev => {
+            const newMessages = [...prev, data]
+            // Keep only last 100 messages
+            if (newMessages.length > MAX_MESSAGES) {
+              return newMessages.slice(-MAX_MESSAGES)
+            }
+            return newMessages
+          })
         }
       } catch {
         // Ignore parse errors
@@ -198,13 +272,8 @@ export default function Home() {
     }
 
     eventSource.onerror = () => {
+      // Don't clear messages on error, just close
       eventSource.close()
-      // Reconnect after delay
-      setTimeout(() => {
-        if (player) {
-          setChatMessages([])
-        }
-      }, 3000)
     }
 
     return () => {
@@ -261,6 +330,20 @@ export default function Home() {
         birdRef.current.velocity += GRAVITY
         birdRef.current.y += birdRef.current.velocity
 
+        // Ceiling collision - prevent bird from going above canvas
+        if (birdRef.current.y < 0) {
+          birdRef.current.y = 0
+          birdRef.current.velocity = 0
+        }
+
+        // Ground collision
+        if (birdRef.current.y + BIRD_SIZE > height - GROUND_HEIGHT) {
+          birdRef.current.y = height - GROUND_HEIGHT - BIRD_SIZE
+          handleGameOver()
+          gameLoopRef.current = requestAnimationFrame(gameLoop)
+          return
+        }
+
         // Spawn pipes
         if (frameCountRef.current % PIPE_SPAWN_RATE === 0) {
           const minGapY = 100
@@ -276,38 +359,26 @@ export default function Home() {
         pipesRef.current = pipesRef.current.filter(pipe => {
           pipe.x -= PIPE_SPEED
 
-          // Check if bird passed pipe
-          if (!pipe.passed && pipe.x + PIPE_WIDTH < birdRef.current.y + BIRD_SIZE / 2) {
+          // Check if bird passed pipe (score)
+          if (!pipe.passed && pipe.x + PIPE_WIDTH < BIRD_X_POSITION) {
             pipe.passed = true
             setScore(s => s + 1)
           }
 
-          // Collision detection
-          const birdLeft = BIRD_SIZE / 2 - 12
-          const birdRight = BIRD_SIZE / 2 + 12
-          const birdTop = birdRef.current.y
-          const birdBottom = birdRef.current.y + BIRD_SIZE
+          // Collision detection - bird is at x=BIRD_X_POSITION
+          const birdLeft = BIRD_X_POSITION - 12
+          const birdRight = BIRD_X_POSITION + 12
+          const birdTop = birdRef.current.y + 5 // Add small margin
+          const birdBottom = birdRef.current.y + BIRD_SIZE - 5
 
-          const pipeLeft = pipe.x
-          const pipeRight = pipe.x + PIPE_WIDTH
+          const pipeLeft = pipe.x + 5 // Add small margin
+          const pipeRight = pipe.x + PIPE_WIDTH - 5
 
           if (birdRight > pipeLeft && birdLeft < pipeRight) {
             if (birdTop < pipe.gapY || birdBottom > pipe.gapY + PIPE_GAP) {
               handleGameOver()
               return false
             }
-          }
-
-          // Ground collision
-          if (birdRef.current.y + BIRD_SIZE > height - GROUND_HEIGHT) {
-            handleGameOver()
-            return false
-          }
-
-          // Ceiling collision
-          if (birdRef.current.y < 0) {
-            birdRef.current.y = 0
-            birdRef.current.velocity = 0
           }
 
           return pipe.x > -PIPE_WIDTH
@@ -345,7 +416,7 @@ export default function Home() {
         const rotation = Math.min(Math.max(birdRef.current.velocity * 3, -30), 90)
 
         ctx.save()
-        ctx.translate(width / 4, birdY + BIRD_SIZE / 2)
+        ctx.translate(BIRD_X_POSITION, birdY + BIRD_SIZE / 2)
         ctx.rotate((rotation * Math.PI) / 180)
 
         // Bird body
@@ -385,7 +456,7 @@ export default function Home() {
         const idleY = height / 2 - 50 + Math.sin(Date.now() / 300) * 10
 
         ctx.save()
-        ctx.translate(width / 2, idleY)
+        ctx.translate(BIRD_X_POSITION, idleY)
         ctx.rotate(0)
 
         ctx.fillStyle = '#FFD700'
@@ -491,6 +562,14 @@ export default function Home() {
     return colors[Math.abs(hash) % colors.length]
   }
 
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem(PLAYER_STORAGE_KEY)
+    setPlayer(null)
+    setGameState('NAME_INPUT')
+    setPlayerName('')
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center p-4">
       {/* Header */}
@@ -508,6 +587,12 @@ export default function Home() {
                 BEST: {player.highScore}
               </span>
             )}
+            <button
+              onClick={handleLogout}
+              className="text-gray-400 hover:text-white text-xs font-pixel"
+            >
+              LOGOUT
+            </button>
           </div>
         )}
       </header>
