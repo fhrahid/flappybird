@@ -762,7 +762,18 @@ export default function Home() {
   }
 
   return (
-    <main className={`min-h-screen flex flex-col items-center p-2 sm:p-4 ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : ''}`}>
+    <>
+      {/* Dancing background text (decorative, behind everything) */}
+      <div aria-hidden className="fixed inset-0 z-0 pointer-events-none overflow-hidden select-none">
+        <span className="bg-dance-text text-[10px] sm:text-xs" style={{ top: '6%', left: '5%', color: 'rgba(255,255,255,0.4)', animationDelay: '0s' }}>Hello Rai how are you?</span>
+        <span className="bg-dance-text text-[10px] sm:text-xs" style={{ top: '14%', right: '7%', color: 'rgba(0,255,136,0.35)', animationDelay: '0.5s' }}>Hello Rai how are you?</span>
+        <span className="bg-dance-text text-[10px] sm:text-xs" style={{ top: '38%', left: '2%', color: 'rgba(255,215,0,0.35)', animationDelay: '1s' }}>Hello Rai how are you?</span>
+        <span className="bg-dance-text text-[10px] sm:text-xs" style={{ top: '52%', right: '3%', color: 'rgba(255,255,255,0.3)', animationDelay: '1.5s' }}>Hello Rai how are you?</span>
+        <span className="bg-dance-text text-[10px] sm:text-xs" style={{ bottom: '18%', left: '8%', color: 'rgba(221,160,221,0.35)', animationDelay: '2s' }}>Hello Rai how are you?</span>
+        <span className="bg-dance-text text-[10px] sm:text-xs" style={{ bottom: '6%', right: '10%', color: 'rgba(0,255,136,0.3)', animationDelay: '2.4s' }}>Hello Rai how are you?</span>
+      </div>
+
+      <main className={`relative z-10 min-h-screen flex flex-col items-center p-2 sm:p-4 ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : ''}`}>
       {/* Header */}
       {!isFullscreen && (
         <header className="glass-panel w-full max-w-4xl p-2 sm:p-4 mb-2 sm:mb-4 flex items-center justify-between flex-wrap gap-2">
@@ -1019,6 +1030,7 @@ export default function Home() {
           </div>
         </div>
       )}
-    </main>
+      </main>
+    </>
   )
 }

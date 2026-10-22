@@ -59,6 +59,28 @@ body {
   }
 }
 
+@keyframes dance {
+  0%, 100% { transform: translateY(0) rotate(-6deg) scale(1); }
+  20% { transform: translateY(-24px) rotate(8deg) scale(1.08); }
+  40% { transform: translateY(6px) rotate(-10deg) scale(0.94); }
+  60% { transform: translateY(-18px) rotate(6deg) scale(1.05); }
+  80% { transform: translateY(8px) rotate(-3deg) scale(0.97); }
+}
+
+.bg-dance-text {
+  position: absolute;
+  font-family: 'Press Start 2P', monospace;
+  white-space: nowrap;
+  animation: dance 2.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-dance-text {
+    animation: none;
+  }
+}
+
 .animate-float {
   animation: float 2s ease-in-out infinite;
 }
