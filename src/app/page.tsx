@@ -131,6 +131,7 @@ export default function Home() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [isChatFocused, setIsChatFocused] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameContainerRef = useRef<HTMLDivElement>(null)
@@ -146,6 +147,12 @@ export default function Home() {
   const gameOverTriggeredRef = useRef(false)
   const lastScoreRef = useRef(0)
   const scoreRef = useRef(0)
+  const isGamePausedRef = useRef(false)
+
+  // Suspend the game while the player is typing in chat
+  useEffect(() => {
+    isGamePausedRef.current = isChatFocused && gameState === 'PLAYING'
+  }, [isChatFocused, gameState])
 
   // Detect mobile
   useEffect(() => {
@@ -489,7 +496,9 @@ export default function Home() {
         ctx.fill()
       }
 
-      if (gameState === 'PLAYING' && isPlayingRef.current) {
+      const isPlayingNow = gameState === 'PLAYING' && isPlayingRef.current
+
+      if (isPlayingNow && !isGamePausedRef.current) {
         frameCountRef.current++
 
         birdRef.current.velocity += GRAVITY * scaleY
@@ -554,7 +563,10 @@ export default function Home() {
           return pipe.x > -PIPE_WIDTH * scaleX
         })
 
-        // Draw pipes
+      }
+
+      // Draw pipes (also while paused, so the frozen scene stays visible)
+      if (gameState === 'PLAYING') {
         pipesRef.current.forEach(pipe => {
           ctx.fillStyle = '#2E8B57'
           ctx.strokeStyle = '#1a5a3a'
@@ -703,7 +715,19 @@ export default function Home() {
   }, [gameState, canvasSize.height])
 
   useEffect(() => {
+    const isTypingInField = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false
+      return (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      )
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Never trigger game controls while the user is typing (chat / name input)
+      if (isTypingInField(e.target)) return
+
       if (e.code === 'Space') {
         e.preventDefault()
         if (gameState === 'PLAYING' || gameState === 'READY') {
@@ -712,7 +736,7 @@ export default function Home() {
           startGame()
         }
       }
-      if (e.code === 'Enter' && gameState !== 'NAME_INPUT' && document.activeElement?.id !== 'chat-input') {
+      if (e.code === 'Enter' && gameState !== 'NAME_INPUT') {
         e.preventDefault()
         if (gameState === 'READY') startGame()
       }
@@ -813,6 +837,17 @@ export default function Home() {
               </div>
             )}
 
+            {/* PAUSED overlay while chatting */}
+            {gameState === 'PLAYING' && isChatFocused && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg pointer-events-none">
+                <p className="text-white text-xs font-pixel animate-pulse text-center">
+                  PAUSED
+                  <br />
+                  <span className="text-[8px] text-gray-300">click canvas to resume</span>
+                </p>
+              </div>
+            )}
+
             {/* GAME OVER overlay - completely separate, outside clickable area */}
             {gameState === 'GAME_OVER' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4 pointer-events-auto"
@@ -865,7 +900,7 @@ export default function Home() {
 
         {/* Side panels - hide in fullscreen */}
         {!isFullscreen && (
-          <div className="flex flex-col gap-2 sm:gap-4 w-full lg:w-80">
+          <div className="flex flex-col gap-2 sm:gap-4 w-full lg:w-96">
             {/* Leaderboard */}
             <div className="glass-panel p-3 sm:p-4">
               <h2 className="text-neon text-xs font-pixel mb-2 sm:mb-4 flex items-center gap-2">
@@ -904,13 +939,13 @@ export default function Home() {
               </h2>
               <div
                 ref={chatContainerRef}
-                className="flex-1 min-h-32 sm:min-h-48 max-h-40 sm:max-h-64 overflow-y-auto mb-2 sm:mb-3 space-y-2"
+                className="flex-1 min-h-44 sm:min-h-64 max-h-64 sm:max-h-96 overflow-y-auto overflow-x-hidden mb-2 sm:mb-3 space-y-2 pr-1"
               >
                 {chatMessages.length === 0 ? (
                   <p className="text-gray-500 text-xs font-pixel">No messages yet</p>
                 ) : (
                   chatMessages.map((msg) => (
-                    <div key={msg.id} className="animate-slide-in">
+                    <div key={msg.id} className="animate-slide-in break-words leading-relaxed">
                       <span className="font-pixel text-xs" style={{ color: getPlayerColor(msg.playerName) }}>
                         {msg.playerName}:
                       </span>
@@ -929,12 +964,15 @@ export default function Home() {
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value.slice(0, 100))}
                     onKeyDown={(e) => { if (e.key === 'Enter') sendMessage() }}
+                    onFocus={() => setIsChatFocused(true)}
+                    onBlur={() => setIsChatFocused(false)}
                     placeholder={canSendMessage ? 'Type...' : 'Wait...'}
                     disabled={!canSendMessage}
-                    className="flex-1 bg-dark/50 text-white text-xs font-pixel px-2 sm:px-3 py-2 rounded border border-gray-700 focus:border-neon transition-colors"
+                    className="flex-1 min-w-0 bg-dark/50 text-white text-xs font-pixel px-2 sm:px-3 py-2 rounded border border-gray-700 focus:border-neon transition-colors"
                   />
                   <button
                     onClick={sendMessage}
+                    onMouseDown={(e) => e.preventDefault()}
                     disabled={!canSendMessage || !chatInput.trim()}
                     className="bg-neon text-dark px-2 sm:px-4 py-2 rounded font-pixel text-xs hover:bg-green-400 transition-colors disabled:opacity-50"
                   >
