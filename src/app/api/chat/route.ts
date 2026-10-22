@@ -3,16 +3,36 @@ import { getDb } from '@/lib/db'
 import { connections } from '@/lib/chat-store'
 import { ObjectId } from 'mongodb'
 
+// Prevent Next.js from statically caching this response at build time
+export const dynamic = 'force-dynamic'
+
+// Server-side flood protection: 1 message per 2 seconds per player
+const FLOOD_INTERVAL_MS = 2000
+const lastMessageAt = new Map<string, number>()
+
 export async function POST(request: NextRequest) {
   try {
     const { playerId, message } = await request.json()
 
-    if (!playerId || !message) {
+    if (!playerId || !message || typeof message !== 'string' || !message.trim()) {
       return NextResponse.json({ error: 'Missing playerId or message' }, { status: 400 })
     }
 
-    if (message.length > 100) {
+    if (message.trim().length > 100) {
       return NextResponse.json({ error: 'Message too long (max 100 characters)' }, { status: 400 })
+    }
+
+    if (typeof playerId !== 'string' || !ObjectId.isValid(playerId)) {
+      return NextResponse.json({ error: 'Invalid playerId' }, { status: 400 })
+    }
+
+    const now = Date.now()
+    const last = lastMessageAt.get(playerId) || 0
+    if (now - last < FLOOD_INTERVAL_MS) {
+      return NextResponse.json(
+        { error: 'Please wait before sending another message' },
+        { status: 429 }
+      )
     }
 
     const db = await getDb()
@@ -24,12 +44,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Player not found' }, { status: 404 })
     }
 
+    lastMessageAt.set(playerId, now)
+
+    const content = message.trim().substring(0, 100)
     const id = new ObjectId()
     const timestamp = new Date().toISOString()
 
     await db.collection('messages').insertOne({
       _id: id,
-      content: message.substring(0, 100),
+      content,
       playerId: new ObjectId(playerId),
       playerName: player.name,
       createdAt: timestamp
@@ -38,7 +61,7 @@ export async function POST(request: NextRequest) {
     const responseData = {
       id: id.toString(),
       playerName: player.name,
-      message: message.substring(0, 100),
+      message: content,
       timestamp
     }
 

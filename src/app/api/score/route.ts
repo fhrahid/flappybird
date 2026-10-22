@@ -6,7 +6,15 @@ export async function POST(request: NextRequest) {
   try {
     const { playerId, score } = await request.json()
 
-    if (!playerId || typeof score !== 'number' || score < 0) {
+    if (
+      !playerId ||
+      typeof playerId !== 'string' ||
+      !ObjectId.isValid(playerId) ||
+      typeof score !== 'number' ||
+      !Number.isInteger(score) ||
+      score < 0 ||
+      score > 100000
+    ) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 

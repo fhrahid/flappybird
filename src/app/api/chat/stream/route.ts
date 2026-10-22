@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   const connectionId = crypto.randomUUID()
+  let heartbeat: ReturnType<typeof setInterval> | undefined
 
   const stream = new ReadableStream({
     start(controller) {
@@ -17,16 +18,17 @@ export async function GET(request: NextRequest) {
       )
 
       // Heartbeat to keep connection alive
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`))
         } catch {
-          clearInterval(heartbeat)
+          if (heartbeat) clearInterval(heartbeat)
           connections.delete(connectionId)
         }
       }, 30000)
     },
     cancel() {
+      if (heartbeat) clearInterval(heartbeat)
       connections.delete(connectionId)
     }
   })

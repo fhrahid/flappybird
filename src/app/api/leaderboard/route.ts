@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
+// Prevent Next.js from statically caching this response at build time
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const db = await getDb()

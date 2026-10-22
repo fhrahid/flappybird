@@ -145,6 +145,7 @@ export default function Home() {
   const isPlayingRef = useRef(false)
   const gameOverTriggeredRef = useRef(false)
   const lastScoreRef = useRef(0)
+  const scoreRef = useRef(0)
 
   // Detect mobile
   useEffect(() => {
@@ -158,27 +159,36 @@ export default function Home() {
 
   // Fullscreen functions
   const enterFullscreen = () => {
-    const elem = document.documentElement
-    if (elem.requestFullscreen) {
-      elem.requestFullscreen()
-    } else if ((elem as any).webkitRequestFullscreen) {
-      (elem as any).webkitRequestFullscreen()
-    }
-    setIsFullscreen(true)
+    const elem = document.documentElement as any
+    try {
+      const result =
+        typeof elem.requestFullscreen === 'function'
+          ? elem.requestFullscreen()
+          : typeof elem.webkitRequestFullscreen === 'function'
+            ? elem.webkitRequestFullscreen()
+            : null
+      // Browsers reject the request when not triggered by a user gesture
+      // (e.g. the delayed auto-fullscreen on mobile) - swallow it.
+      Promise.resolve(result).catch(() => {})
+    } catch {}
   }
 
   const exitFullscreen = () => {
-    if (document.exitFullscreen) {
-      document.exitFullscreen()
-    } else if ((document as any).webkitExitFullscreen) {
-      (document as any).webkitExitFullscreen()
-    }
-    setIsFullscreen(false)
+    try {
+      const result =
+        typeof document.exitFullscreen === 'function'
+          ? document.exitFullscreen()
+          : typeof (document as any).webkitExitFullscreen === 'function'
+            ? (document as any).webkitExitFullscreen()
+            : null
+      Promise.resolve(result).catch(() => {})
+    } catch {}
   }
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      const element = document.fullscreenElement || (document as any).webkitFullscreenElement
+      setIsFullscreen(!!element)
     }
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
@@ -187,6 +197,9 @@ export default function Home() {
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
     }
   }, [])
+
+  // Stable id for SSE subscription (avoids reconnects when player object changes)
+  const playerId = player?.id
 
   // Load player and messages
   useEffect(() => {
@@ -292,6 +305,7 @@ export default function Home() {
       if (res.ok) {
         setPlayer(data)
         setGameState('READY')
+        setIsSubmitting(false)
       } else {
         setNameError(data.error || 'Failed to submit name')
         setIsSubmitting(false)
@@ -306,6 +320,7 @@ export default function Home() {
   const startGame = () => {
     playSound('jump')
     setScore(0)
+    scoreRef.current = 0
     birdRef.current = { y: 180, velocity: 0 }
     pipesRef.current = []
     frameCountRef.current = 0
@@ -327,31 +342,36 @@ export default function Home() {
 
     isPlayingRef.current = false
     if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current)
-    setFinalScore(score)
-    if (player) submitScore(player.id, score)
+    // Use the ref so a point scored in the same frame as the collision
+    // is not lost due to a stale closure
+    const finalScore = scoreRef.current
+    setFinalScore(finalScore)
+    if (player) submitScore(player.id, finalScore)
     setGameState('GAME_OVER')
-  }, [score, player, submitScore])
+  }, [player, submitScore])
 
   const sendMessage = async () => {
     playSound('click')
     if (!chatInput.trim() || !player || !canSendMessage) return
 
     try {
-      await fetch('/api/chat', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: player.id, message: chatInput.trim() })
       })
-      setChatInput('')
-      setCanSendMessage(false)
-      setTimeout(() => setCanSendMessage(true), 2000)
+      if (res.ok) {
+        setChatInput('')
+        setCanSendMessage(false)
+        setTimeout(() => setCanSendMessage(true), 2000)
+      }
     } catch (error) {
       console.error('Failed to send message:', error)
     }
   }
 
   useEffect(() => {
-    if (!player) return
+    if (!playerId) return
 
     const eventSource = new EventSource('/api/chat/stream')
     eventSourceRef.current = eventSource
@@ -361,6 +381,8 @@ export default function Home() {
         const data = JSON.parse(event.data)
         if (data.type !== 'connected') {
           setChatMessages(prev => {
+            const seen = new Set(prev.map(m => m.id))
+            if (seen.has(data.id)) return prev
             const newMessages = [...prev, data]
             return newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages
           })
@@ -368,9 +390,29 @@ export default function Home() {
       } catch {}
     }
 
-    eventSource.onerror = () => eventSource.close()
+    // Do NOT close on error: the browser auto-reconnects EventSource,
+    // closing here would permanently kill live chat until reload.
+
     return () => eventSource.close()
-  }, [player])
+  }, [playerId])
+
+  // Load chat history (SSE only delivers messages sent after connecting)
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const res = await fetch('/api/chat')
+        if (!res.ok) return
+        const history = await res.json()
+        if (!Array.isArray(history) || history.length === 0) return
+        setChatMessages(prev => {
+          const seen = new Set(prev.map(m => m.id))
+          const merged = [...prev, ...history.filter((m: ChatMessage) => !seen.has(m.id))]
+          return merged.slice(-MAX_MESSAGES)
+        })
+      } catch {}
+    }
+    loadHistory()
+  }, [])
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -450,7 +492,7 @@ export default function Home() {
       if (gameState === 'PLAYING' && isPlayingRef.current) {
         frameCountRef.current++
 
-        birdRef.current.velocity += GRAVITY
+        birdRef.current.velocity += GRAVITY * scaleY
         birdRef.current.y += birdRef.current.velocity
 
         // Ceiling
@@ -460,8 +502,8 @@ export default function Home() {
         }
 
         // Ground
-        if (birdRef.current.y + BIRD_SIZE > height - scaledGroundHeight) {
-          birdRef.current.y = height - scaledGroundHeight - BIRD_SIZE
+        if (birdRef.current.y + BIRD_SIZE * scaleY > height - scaledGroundHeight) {
+          birdRef.current.y = height - scaledGroundHeight - BIRD_SIZE * scaleY
           handleGameOver()
           gameLoopRef.current = requestAnimationFrame(gameLoop)
           return
@@ -489,6 +531,7 @@ export default function Home() {
                 lastScoreRef.current = s + 1
                 playSound('score')
               }
+              scoreRef.current = s + 1
               return s + 1
             })
           }
@@ -652,12 +695,12 @@ export default function Home() {
   const handleJump = useCallback(() => {
     if (gameState === 'PLAYING') {
       playSound('jump')
-      birdRef.current.velocity = JUMP_FORCE
+      birdRef.current.velocity = JUMP_FORCE * (canvasSize.height / 600)
     } else if (gameState === 'READY') {
       startGame()
     }
     // Don't restart on click in GAME_OVER - only button should work
-  }, [gameState])
+  }, [gameState, canvasSize.height])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
